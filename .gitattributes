@@ -1,0 +1,3 @@
+# Always check out with LF, even on Windows (core.autocrlf). Prettier and
+# .editorconfig both mandate LF; CI runs the Markdown check on windows-latest.
+* text=auto eol=lf
