@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: MIT
 
 //! Timestamp parsing & serialization.
 //!
@@ -6,7 +6,7 @@
 //! - `maybe_get_utc_timestamp`: ms-since-epoch / .NET-ticks / ISO-8601 branches.
 //! - Output matches Python `datetime.isoformat()`: naive (no tz offset), no microseconds
 //!   when zero, exactly 6 fractional digits when present. Validated against the reference
-//!   Python client — e.g. ticks `639179113099292149` → `2026-06-24T15:21:49.929214`.
+//!   Python client - e.g. ticks `639179113099292149` → `2026-06-24T15:21:49.929214`.
 
 #![allow(dead_code)]
 
@@ -28,7 +28,7 @@ const TIME_FORMATS: &[&str] = &[
     "%d.%m.%Y %I:%M:%S %p",
 ];
 
-/// `datetime.datetime.fromtimestamp(0)` — local-naive epoch (the init value for
+/// `datetime.datetime.fromtimestamp(0)` - local-naive epoch (the init value for
 /// `cur_log_time` / `last_utc_time`).
 pub fn epoch_zero() -> NaiveDateTime {
     Local
@@ -156,10 +156,11 @@ fn from_milliseconds(ms: i64) -> Option<NaiveDateTime> {
 /// Must reproduce Python's **lossy f64** path, not exact integer math: Python evaluates
 /// `value / 10000000` as a correctly-rounded float of the big integer, so the result is
 /// quantized to the f64 ulp (~15µs at this magnitude). Critically, `ticks as f64 / 1e7`
-/// is *not* equivalent — casting the ~6.4e17 tick count to f64 first loses up to ~6µs and
+/// is *not* equivalent - casting the ~6.4e17 tick count to f64 first loses up to ~6µs and
 /// can land on a different microsecond. We instead split into whole seconds + remainder so
 /// the float division stays small and matches Python's `int / int`; then round the
 /// fractional microseconds half-to-even like Python's `round()`.
+// WIRE: must reproduce Python's lossy `int / int` float division (see doc above).
 fn from_dotnet_ticks(ticks: i64) -> Option<NaiveDateTime> {
     let base = NaiveDate::from_ymd_opt(1, 1, 1)?.and_hms_opt(0, 0, 0)?;
     let whole_seconds = ticks / 10_000_000; // exact in f64 (< 2^53)
@@ -262,7 +263,7 @@ mod tests {
     /// Expected ms-path output for a given epoch-ms value, computed the same way
     /// `from_milliseconds` does. The ms branch mirrors Python `fromtimestamp(ms*0.001)`,
     /// which is **local-timezone dependent**, so the expectation must follow the local
-    /// zone too — hardcoding an absolute string would break on any runner not in the
+    /// zone too - hardcoding an absolute string would break on any runner not in the
     /// author's zone (e.g. UTC CI). Validated against the Python client on the same machine.
     fn local_ms_isoformat(ms: i64) -> String {
         isoformat(

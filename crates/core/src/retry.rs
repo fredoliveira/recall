@@ -1,11 +1,11 @@
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: MIT
 
 //! Exponential-backoff retry (port of `retry_utils.py`).
 //!
 //! - initial 1s, ×2 each attempt, capped at 10min, max total 24h.
 //! - response valid when `status < 500 || status >= 600` (retry only 5xx).
 //! - retry on transport/connection errors only; re-raise others.
-//! - ⚠️ `ureq` maps non-2xx to `Err(Status)` — the caller (`api_client`) normalizes those
+//! - ⚠️ `ureq` maps non-2xx to `Err(Status)` - the caller (`services::seventeenlands::transport`) normalizes those
 //!   back into `Ok(Response)` so HTTP responses (incl. 4xx/5xx) reach the
 //!   `response_validator`; only genuine transport errors arrive here as `Err`.
 
@@ -83,7 +83,7 @@ where
 /// Retry an API call with the standard delays (port of `retry_api_call`).
 ///
 /// All errors reaching this layer are transport errors (the caller has already mapped
-/// non-2xx HTTP statuses to `Ok`), so every `Err` is retryable — mirroring Python's
+/// non-2xx HTTP statuses to `Ok`), so every `Err` is retryable - mirroring Python's
 /// `_should_retry_error` returning `True` for `ConnectionError`.
 pub fn retry_api_call<T, E, F, V>(callback: F, response_validator: V) -> Result<T, RetryError<E>>
 where
@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn does_not_retry_4xx() {
-        // 404 is "valid" (status < 500) — returned as-is, no retry.
+        // 404 is "valid" (status < 500) - returned as-is, no retry.
         let calls = Cell::new(0);
         let r: Result<u16, RetryError<()>> = retry_until_successful(
             || {

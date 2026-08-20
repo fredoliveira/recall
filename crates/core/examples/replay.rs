@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: MIT
 
 //! Replay a Player.log through the Follower with a recording submitter, printing a summary
 //! of what would be submitted. Dev tooling for validating the parser on real logs without
@@ -9,30 +9,30 @@
 
 use std::collections::BTreeMap;
 
-use recall_core::api_client::RecordingSubmitter;
 use recall_core::follower::Follower;
+use recall_core::services::seventeenlands::RecordingSubmitter;
+use recall_core::services::seventeenlands::SeventeenLands;
 
 fn main() {
     let path = std::env::args().nth(1).expect("usage: replay <logfile>");
-    let rec = RecordingSubmitter::new();
-    let mut f = Follower::with_submitter(
+    let mut f = Follower::with_sink(SeventeenLands::new(
         "00000000-0000-4000-8000-000000000000".into(),
-        "http://localhost".into(),
-        rec,
-    );
+        RecordingSubmitter::new(),
+    ));
     f.parse_log(&path, false);
 
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
-    for c in &f.api.calls {
+    for c in &f.sink.wire.calls {
         *counts.entry(c.endpoint.clone()).or_default() += 1;
     }
-    eprintln!("total submissions: {}", f.api.calls.len());
+    eprintln!("total submissions: {}", f.sink.wire.calls.len());
     for (ep, n) in &counts {
         eprintln!("  {ep}: {n}");
     }
 
     if let Some(g) = f
-        .api
+        .sink
+        .wire
         .calls
         .iter()
         .find(|c| c.endpoint.ends_with("add_game"))

@@ -1,4 +1,4 @@
-// Menu-bar (notification-area) desktop app for the 17Lands MTGA log client.
+// Menu-bar (notification-area) desktop app for Recall, the MTG Arena log parser.
 // On Windows, don't pop a console window in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -11,7 +11,7 @@ use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, WindowEvent, Wry};
 
-use recall_core::{api_client, config};
+use recall_core::config::Config;
 use state::AppState;
 
 /// Handle to the disabled tray-menu status line ("Working" / "Stopped" / "Missing token"),
@@ -23,12 +23,11 @@ fn main() {
     logbridge::WebviewLogger::install();
 
     // Dev safety: never POST to the live API during development. Set RECALL_HOST
-    // (e.g. the local mock server) to override the default live host.
-    let host =
-        std::env::var("RECALL_HOST").unwrap_or_else(|_| api_client::DEFAULT_HOST.to_string());
+    // (e.g. the local mock server) to override the configured host.
+    let host_override = std::env::var("RECALL_HOST").ok();
 
     tauri::Builder::default()
-        .manage(AppState::new(host))
+        .manage(AppState::new(host_override))
         .invoke_handler(tauri::generate_handler![
             commands::token_present,
             commands::save_token,
@@ -53,8 +52,8 @@ fn main() {
 
             // First run: if no token yet, open the window on Settings for onboarding.
             // Otherwise start following immediately.
-            let following_started =
-                config::read_toml_token().is_some() && app.state::<AppState>().start().is_ok();
+            let following_started = Config::load().seventeenlands_token().is_some()
+                && app.state::<AppState>().start().is_ok();
 
             if !following_started {
                 if let Some(w) = app.get_webview_window("main") {
@@ -147,7 +146,7 @@ fn show_window(app: &AppHandle) {
 }
 
 fn tray_status_text(app: &AppHandle) -> &'static str {
-    if config::read_toml_token().is_none() {
+    if Config::load().seventeenlands_token().is_none() {
         "Missing token"
     } else if app.state::<AppState>().is_following() {
         "Working"
@@ -156,7 +155,7 @@ fn tray_status_text(app: &AppHandle) -> &'static str {
     }
 }
 
-/// Re-render the tray status line. Safe from any thread — Tauri menu setters
+/// Re-render the tray status line. Safe from any thread - Tauri menu setters
 /// dispatch to the main thread internally.
 fn update_tray_status(app: &AppHandle) {
     let text = tray_status_text(app);

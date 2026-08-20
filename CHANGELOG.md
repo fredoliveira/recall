@@ -6,53 +6,76 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- Per-service configuration: `[services.<name>]` sections in `config.toml`
+  (`[services.seventeenlands]` with `token` and optional `host`); both the CLI and the desktop app
+  build their service set from it.
+- The `archive` service: a local JSONL record of every parsed event, one `<dir>/<YYYY-MM-DD>.jsonl`
+  file per day, enabled by adding `[services.archive]` (`dir`). Never affects the 17Lands upload.
+
+### Changed
+
+- Config layout auto-migrates: a flat top-level `token` moves into `services.seventeenlands.token`
+  on first load.
+- Internals reorganized around a neutral event stream: the parser emits typed `GameEvent`s and
+  services (17Lands today) translate them. Wire output is unchanged.
+- Relicensed under the MIT License (was GPL-3.0-only).
+
 ### Removed
-- The oracle parity harness (`tools/oracle/run_oracle.sh`, the `oracle_diff` example, and
-  the `just oracle*`/`parity` recipes). It ran the brew-installed `seventeenlands`, which
-  has been this Rust client itself since 0.1.1 — so it was diffing the client against
-  itself. Parity is now maintained via the fixture tests and by diffing upstream Python
-  source changes. The local mock server moved to `tools/mock_server.py` (still used for
-  desktop dev).
+
+- `--tee <URL>`. Secondary outputs are now services configured in `config.toml` rather than flags.
+- The `~/.mtga_follower.ini` import and the interactive stdin token prompt. With no token configured
+  the CLI prints the config path and exits.
+- `NOTICE` and `ROADMAP.md`.
+- The oracle parity harness (`tools/oracle/run_oracle.sh`, the `oracle_diff` example, and the
+  `just oracle*`/`parity` recipes). It ran the brew-installed `seventeenlands`, which has been this
+  Rust client itself since 0.1.1 - so it was diffing the client against itself. Parity is now
+  maintained via the fixture tests and by diffing upstream Python source changes. The local mock
+  server moved to `tools/mock_server.py` (still used for desktop dev).
 
 ## [0.2.0] - 2026-07-14
 
 ### Changed
-- Renamed the product to **Recall** (after Ancestral Recall). The binary is now `recall`
-  (was `seventeenlands`), the crates are `recall-core` / `recall` / `recall-desktop`, the
-  desktop app is "Recall", the Homebrew formula/cask are `recall` / `recall-desktop`, and
-  the repository is `fredoliveira/recall`. The token now lives at
-  `<config_dir>/recall/config.toml` (tokens saved under the old `17l/` dir are not
-  migrated — re-enter yours once). The wire protocol is unchanged: uploads still go to
-  17Lands, identified as the upstream Python client.
+
+- Renamed the product to **Recall** (after Ancestral Recall). The binary is now `recall` (was
+  `seventeenlands`), the crates are `recall-core` / `recall` / `recall-desktop`, the desktop app is
+  "Recall", the Homebrew formula/cask are `recall` / `recall-desktop`, and the repository is
+  `fredoliveira/recall`. The token now lives at `<config_dir>/recall/config.toml` (tokens saved
+  under the old `17l/` dir are not migrated - re-enter yours once). The wire protocol is unchanged:
+  uploads still go to 17Lands, identified as the upstream Python client.
 
 ## [0.1.2] - 2026-07-13
 
 ### Added
-- `--tee <URL>`: also forward every parsed event to a local HTTP sink (e.g. a live draft
-  companion app). Blobs POST as JSON to `<URL>/<event>`; fire-and-forget, so a missing or
-  slow sink never affects the 17Lands upload.
+
+- `--tee <URL>`: also forward every parsed event to a local HTTP sink (e.g. a live draft companion
+  app). Blobs POST as JSON to `<URL>/<event>`; fire-and-forget, so a missing or slow sink never
+  affects the 17Lands upload.
 
 ## [0.1.1] - 2026-06-27
 
 ### Changed
-- The installed executable is now named `seventeenlands` (was `seventeenlands-rust`),
-  matching the official Python client it replaces. The crate, repository, and release
-  artifacts keep the `seventeenlands-rust` name.
+
+- The installed executable is now named `seventeenlands` (was `seventeenlands-rust`), matching the
+  official Python client it replaces. The crate, repository, and release artifacts keep the
+  `seventeenlands-rust` name.
 
 ## [0.1.0] - 2026-06-26
 
-Initial release. A drop-in, wire-compatible Rust port of the official 17Lands MTG Arena log
-client ([`mtga-log-client`](https://github.com/rconroy293/mtga-log-client)), targeting
-upstream `CLIENT_VERSION = "0.1.44.p"`.
+Initial release. A drop-in, wire-compatible Rust port of the official 17Lands MTG Arena log client
+([`mtga-log-client`](https://github.com/rconroy293/mtga-log-client)), targeting upstream
+`CLIENT_VERSION = "0.1.44.p"`.
 
 ### Added
-- Tails Arena's `Player.log`, parses gameplay events, and uploads them to the 17Lands REST
-  API with byte-for-byte payload parity against the Python client.
+
+- Tails Arena's `Player.log`, parses gameplay events, and uploads them to the 17Lands REST API with
+  byte-for-byte payload parity against the Python client.
 - CLI flags: `--log-file`, `--host`, `--token`, `--once`.
-- Token resolution chain: flag → platform config dir → legacy `~/.mtga_follower.ini`
-  (migrated on first run) → interactive prompt.
-- Oracle parity tooling (`tools/oracle/`, `examples/oracle_diff.rs`) and an offline
-  `replay` example.
+- Token resolution chain: flag → platform config dir → legacy `~/.mtga_follower.ini` (migrated on
+  first run) → interactive prompt.
+- Oracle parity tooling (`tools/oracle/`, `examples/oracle_diff.rs`) and an offline `replay`
+  example.
 
 [Unreleased]: https://github.com/fredoliveira/recall/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/fredoliveira/recall/compare/v0.1.3...v0.2.0

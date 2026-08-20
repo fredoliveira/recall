@@ -4,7 +4,7 @@
 # can be rebuilt on its own via workflow_dispatch.
 #
 # Both workflows use softprops/action-gh-release, which creates the tag's release if it
-# doesn't exist yet and appends assets if it does — so the two runs can finish in either
+# doesn't exist yet and appends assets if it does - so the two runs can finish in either
 # order. Only release.yml generates the release notes.
 name: Release Desktop
 

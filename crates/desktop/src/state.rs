@@ -8,14 +8,16 @@ use std::thread::JoinHandle;
 
 use serde::Serialize;
 
-use recall_core::api_client::ApiClient;
+use recall_core::config::Config;
 use recall_core::follower::Follower;
-use recall_core::{config, paths};
+use recall_core::services::seventeenlands::ApiClient;
+use recall_core::{paths, services};
 
 use crate::observer::{ObservingSubmitter, UploadStatus};
 
 pub struct AppState {
-    host: String,
+    /// `RECALL_HOST` dev override; otherwise the host comes from the config at start.
+    host_override: Option<String>,
     cancel: Arc<AtomicBool>,
     following: Arc<AtomicBool>,
     thread: Mutex<Option<JoinHandle<()>>>,
@@ -39,17 +41,19 @@ pub struct StatusDto {
     pub upload_count: u64,
     pub last_endpoint: Option<String>,
     pub last_time: Option<String>,
+    /// Enabled service names, primary first (e.g. `["seventeenlands"]`).
+    pub services: Vec<String>,
     /// Crate version (e.g. "0.1.1"), rendered in the in-window header.
     pub app_version: String,
 }
 
 impl AppState {
-    pub fn new(host: String) -> Self {
+    pub fn new(host_override: Option<String>) -> Self {
         // Dev/test override (parallels RECALL_HOST): pin the followed log file so the
         // app can be exercised headlessly against a fixture log.
         let log_path = std::env::var("RECALL_LOG").ok().map(PathBuf::from);
         Self {
-            host,
+            host_override,
             cancel: Arc::new(AtomicBool::new(false)),
             following: Arc::new(AtomicBool::new(false)),
             thread: Mutex::new(None),
@@ -74,6 +78,13 @@ impl AppState {
         *self.log_path.lock().unwrap() = p;
     }
 
+    /// Upload host: `RECALL_HOST` if set, else `services.seventeenlands.host`, else live.
+    fn host_for(&self, cfg: &Config) -> String {
+        self.host_override
+            .clone()
+            .unwrap_or_else(|| cfg.seventeenlands_host())
+    }
+
     pub fn is_following(&self) -> bool {
         self.following.load(Ordering::Relaxed)
     }
@@ -83,10 +94,13 @@ impl AppState {
         if self.is_following() {
             return Ok(());
         }
-        let token = config::read_toml_token().ok_or("No valid token configured")?;
+        let cfg = Config::load();
+        let token = cfg
+            .seventeenlands_token()
+            .ok_or("No valid token configured")?;
         let path = self
             .resolve_log_path()
-            .ok_or("No Player.log found — set a log path in Settings")?;
+            .ok_or("No Player.log found - set a log path in Settings")?;
         let path_str = path.to_string_lossy().to_string();
 
         // Resume from the remembered offset only when the resolved path is unchanged since the
@@ -102,7 +116,7 @@ impl AppState {
         self.cancel.store(false, Ordering::Relaxed);
         let cancel = self.cancel.clone();
         let following = self.following.clone();
-        let host = self.host.clone();
+        let host = self.host_for(&cfg);
         let upload = self.upload.clone();
         let read_offset = self.read_offset.clone();
 
@@ -110,8 +124,8 @@ impl AppState {
             .name("recall-follower".into())
             .spawn(move || {
                 following.store(true, Ordering::Relaxed);
-                let api = ObservingSubmitter::new(ApiClient::new(host.clone()), upload);
-                let mut follower = Follower::with_submitter(token, host, api);
+                let wire = ObservingSubmitter::new(ApiClient::new(host), upload);
+                let mut follower = Follower::with_sink(services::from_config(&cfg, token, wire));
                 follower.parse_log_cancellable_from(
                     &path_str,
                     true,
@@ -145,16 +159,18 @@ impl AppState {
 
     pub fn status(&self) -> StatusDto {
         let u = self.upload.lock().unwrap().clone();
+        let cfg = Config::load();
         StatusDto {
             following: self.is_following(),
-            token_present: config::read_toml_token().is_some(),
+            token_present: cfg.seventeenlands_token().is_some(),
             log_path: self
                 .resolve_log_path()
                 .map(|p| p.to_string_lossy().to_string()),
-            host: self.host.clone(),
+            host: self.host_for(&cfg),
             upload_count: u.count,
             last_endpoint: u.last_endpoint,
             last_time: u.last_time,
+            services: cfg.service_names(),
             app_version: env!("CARGO_PKG_VERSION").to_string(),
         }
     }

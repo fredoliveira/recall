@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: MIT
 
 //! MTGA `Player.log` discovery.
 //!
@@ -117,7 +117,7 @@ mod tests {
     fn osx_path_is_first_and_well_formed() {
         let first = &possible_current_filepaths()[0];
         // `Path::ends_with` matches on whole path components, so this is separator-agnostic
-        // — a plain `to_string_lossy().contains("a/b")` would fail on Windows, where
+        // - a plain `to_string_lossy().contains("a/b")` would fail on Windows, where
         // `PathBuf::join` emits backslashes.
         assert!(
             first.ends_with("Library/Logs/Wizards Of The Coast/MTGA/Player.log"),

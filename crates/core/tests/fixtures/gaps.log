@@ -6,3 +6,8 @@
 [UnityCrossThreadLogger]2/2/2024 1:00:05 PM: Draft_CompleteDraft {"InternalEventName":"PremierDraft_Set","DraftId":"draft-1","CourseId":"course-1","CardPool":[1,2,3]}
 [UnityCrossThreadLogger]2/2/2024 1:00:06 PM: DTO_InventoryInfo {"DTO_InventoryInfo":{"Gems":100,"Gold":5000,"Boosters":[{"CollationId":1,"Count":3}],"WildCardCommons":2,"SomeIgnoredField":"x"}}
 [UnityCrossThreadLogger]2/2/2024 1:00:07 PM:  PlayerInventory.GetPlayerCardsV3  {"70000":4,"70001":2}
+[UnityCrossThreadLogger]2/2/2024 1:00:08 PM: Event_Join {"Course":{"InternalEventName":"PremierDraft_Set","CourseId":"course-1","CardPool":[1,2,3]}}
+[UnityCrossThreadLogger]2/2/2024 1:00:09 PM: Event_SetDeck {"EventName":"PremierDraft_Set","Deck":{"MainDeck":[{"cardId":101,"quantity":2},{"cardId":102,"quantity":1}],"Sideboard":[{"cardId":103,"quantity":1}],"Companions":[{"cardId":104}]}}
+[UnityCrossThreadLogger]2/2/2024 1:00:10 PM: Event_GetCourses {"Courses":[{"InternalEventName":"PremierDraft_Set","CourseId":"course-1"},{"InternalEventName":"QuickDraft_Set","CourseId":"course-2"}]}
+[UnityCrossThreadLogger]2/2/2024 1:00:11 PM: Rank_GetCombinedRankInfo {"playerId":"ACC123","limitedClass":"Gold","limitedLevel":3,"limitedStep":1,"constructedClass":"Platinum","constructedLevel":2,"constructedStep":0,"limitedSeasonOrdinal":42,"constructedSeasonOrdinal":42}
+[UnityCrossThreadLogger]2/2/2024 1:00:12 PM: PlayerProgress {"NodeStates":{"RewardTierUpgrade":{"Tier":2}},"CurrentLevel":10}

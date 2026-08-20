@@ -1,7 +1,7 @@
 # The installable CLI crate: `cargo install --git <repo> recall` produces the `recall` binary.
 [package]
 name = "recall"
-description = "Recall — Rust port of the 17Lands MTGA log client (uploads MTG Arena data to 17lands.com)"
+description = "Recall - an MTG Arena log parser that turns Player.log into an event stream for pluggable services"
 edition = "2024"
 readme = "../../README.md"
 keywords = ["mtg", "mtga", "17lands", "magic", "draft"]

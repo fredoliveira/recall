@@ -30,7 +30,7 @@
     "targets": ["app", "dmg"],
     "category": "Utility",
     "shortDescription": "MTGA log uploader for 17Lands",
-    "longDescription": "Menu-bar app that tails MTG Arena's Player.log and uploads draft/game data to 17Lands.",
+    "longDescription": "Menu-bar app for Recall, the MTG Arena log parser: tails Player.log and feeds your configured services (17Lands by default).",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

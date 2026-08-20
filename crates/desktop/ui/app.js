@@ -1,4 +1,4 @@
-// Vanilla frontend. Relies on `withGlobalTauri: true` — no bundler.
+// Vanilla frontend. Relies on `withGlobalTauri: true` - no bundler.
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
@@ -57,7 +57,7 @@ async function refreshStatus() {
   dot.className = "dot " + (s.following ? "on" : s.token_present ? "off" : "err");
 
   let text;
-  if (!s.token_present) text = "No token set — open Settings";
+  if (!s.token_present) text = "No token set - open Settings";
   else if (s.following) text = "Following " + (s.log_path || "log");
   else text = "Stopped";
   $("status-text").textContent = text;

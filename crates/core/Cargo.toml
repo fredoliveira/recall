@@ -1,6 +1,6 @@
 [package]
 name = "recall-core"
-description = "Wire-compatible core for the 17Lands MTGA log client (follower, parser, REST envelope)"
+description = "Recall core - MTG Arena log parser, neutral event stream, and pluggable upload services (17Lands, archive)"
 edition = "2024"
 version.workspace = true
 license.workspace = true
@@ -13,9 +13,9 @@ name = "recall_core"
 path = "src/lib.rs"
 
 [dependencies]
-# HTTP — blocking, lightweight; matches the synchronous tail-and-POST loop.
+# HTTP - blocking, lightweight; matches the synchronous tail-and-POST loop.
 ureq = "2"
-# JSON — preserve_order keeps emitted object key order identical to Python dicts.
+# JSON - preserve_order keeps emitted object key order identical to Python dicts.
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 # gzip for the add_game endpoint.
@@ -32,3 +32,6 @@ uuid = { version = "1", features = ["v4"] }
 log = "0.4"
 # Home / XDG config dir resolution.
 dirs = "5"
+
+[dev-dependencies]
+tempfile = "3"

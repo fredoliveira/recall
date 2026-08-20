@@ -1,16 +1,15 @@
-# Recall
-
-*Named after [Ancestral Recall](https://scryfall.com/search?q=!%22Ancestral+Recall%22) — it draws your games and sends them to [17Lands](https://www.17lands.com).*
+# Recall - an MTG Arena log parser
 
 [![CI](https://github.com/fredoliveira/recall/actions/workflows/ci.yml/badge.svg)](https://github.com/fredoliveira/recall/actions/workflows/ci.yml)
 
-A Rust port of the [17Lands](https://www.17lands.com) MTG Arena log client. It tails
-Arena's `Player.log`, parses gameplay events, and uploads them to the 17Lands REST API.
+Recall is an MTG Arena log parser. It tails Arena's `Player.log`, parses drafts, games, decks, ranks
+and more into a neutral event stream, then hands that stream to services: 17Lands by default, and
+optionally a local JSONL archive of your own data. The original motivation for Recall was a
+single-binary distribution with no Python dependencies that is easier to build on top of.
 
-This is a drop-in replacement for the official Python client
-([`mtga-log-client`](https://github.com/rconroy293/mtga-log-client)), and as such it aims
-for byte-for-byte compatibility with the original client. The motivation to build this stems
-from wanting a single binary distribution that requires no old python dependencies.
+The 17Lands service is inspired by the official
+[17Lands Python client](https://github.com/rconroy293/mtga-log-client) and is a drop-in replacement
+for it: what Recall sends to 17Lands is byte-for-byte identical to the original.
 
 ## Install
 
@@ -32,56 +31,72 @@ cargo install --git https://github.com/fredoliveira/recall recall
 recall
 ```
 
-**Detailed Logs** must be enabled in MTGA (gear → Account → "Detailed Logs") for game data
-to be captured.
+**Detailed Logs** must be enabled in MTGA (gear → Account → "Detailed Logs") for game data to be
+captured.
 
-### Forwarding events to a local app
+## Configuration
 
-`--tee <URL>` also POSTs every parsed event to a local HTTP sink (e.g. a live draft
-companion), as JSON at `<URL>/<event>` — for example `http://localhost:3000/add_human_draft_pack`:
+`<config_dir>/recall/config.toml` (`~/.config/recall/config.toml` on Linux,
+`~/Library/Application Support/recall/config.toml` on macOS). One section per service; a present
+section enables it. Create it with your 17Lands token (from
+[17lands.com/account](https://www.17lands.com/account)); without one, `recall` prints the path and
+exits.
 
-```sh
-recall --tee http://localhost:3000
+```toml
+[services.seventeenlands]
+token = "00000000-0000-4000-8000-000000000000"
+# host = "https://api.17lands.com"      # optional override
+
+[services.archive]                      # present = enabled
+# dir = "/path/to/archive"              # optional; default below
 ```
 
-This is fire-and-forget: a missing or slow sink never affects the 17Lands upload.
+### Keeping your own data: the archive
+
+Add an empty `[services.archive]` section and every parsed event is also written locally,
+service-neutral, alongside the 17Lands upload. Files land in
+`~/Library/Application Support/recall/archive/` on macOS and `~/.local/share/recall/archive/` on
+Linux (override with `dir`): one `<YYYY-MM-DD>.jsonl` per day, dated by the log timestamp, one JSON
+object per line - `{"v": 1, "event": "<name>", ...event fields}`. Summarize a file with
+`cargo run -p recall-core --example replay_archive -- <file.jsonl>`.
 
 ## Repository layout
 
 This is a Cargo workspace producing two artifacts from a shared core:
 
-| Crate | Path | Artifact |
-|-------|------|----------|
-| `recall-core` | `crates/core` | shared library (follower, parser, REST envelope) |
-| `recall` | `crates/cli` | the `recall` CLI |
-| `recall-desktop` | `crates/desktop` | Tauri menu-bar app (see its [README](crates/desktop/README.md)) |
+| Crate            | Path             | Artifact                                                                                         |
+| ---------------- | ---------------- | ------------------------------------------------------------------------------------------------ |
+| `recall-core`    | `crates/core`    | shared library: the parser (`follower`), the event model (`events`), the services (`services/…`) |
+| `recall`         | `crates/cli`     | the `recall` CLI                                                                                 |
+| `recall-desktop` | `crates/desktop` | Tauri menu-bar app (see its [README](crates/desktop/README.md))                                  |
 
-Bare `cargo build`/`test` build the CLI + core; the desktop app builds with
-`-p recall-desktop`.
+Bare `cargo build`/`test` build the CLI + core; the desktop app builds with `-p recall-desktop`.
 
 ## Development
 
 Common tasks live in the [`justfile`](justfile) (`brew install just`):
 
-| Command | What it does |
-|---------|--------------|
-| `just run [ARGS]` | Build and run the CLI against the auto-detected `Player.log` |
-| `just desktop-run` | Build and run the desktop app (release; no Tauri CLI needed) |
-| `just desktop-dev` | Desktop dev loop with hot reload, pointed at a local mock API |
-| `just desktop-build` | Build the desktop bundle (`.app` + `.dmg`; needs the Tauri CLI) |
-| `just test` | Run the test suite |
-| `just lint` | Pre-commit gate: format check + clippy + tests (mirrors CI) |
-| `just parity LOG` | Byte-for-byte output parity check against the Python client |
-| `just replay LOG` | Replay a log offline, printing payloads without uploading |
+| Command              | What it does                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------- |
+| `just run [ARGS]`    | Build and run the CLI against the auto-detected `Player.log`                          |
+| `just desktop-run`   | Build and run the desktop app (release; no Tauri CLI needed)                          |
+| `just desktop-dev`   | Desktop dev loop with hot reload, pointed at a local mock API                         |
+| `just desktop-build` | Build the desktop bundle (`.app` + `.dmg`; needs the Tauri CLI)                       |
+| `just test`          | Run the test suite                                                                    |
+| `just lint`          | Pre-commit gate: format check + clippy + tests (mirrors CI)                           |
+| `just replay LOG`    | Replay a log offline, printing endpoint counts without uploading                      |
+| `just golden`        | Byte-compare parser output for the real logs in `local/logs/` against saved baselines |
+
+Wire compatibility with 17Lands is enforced by fixture tests (`cargo test`) and the golden
+baselines; see [`CLAUDE.md`](CLAUDE.md) for the rules. Adding a service means implementing one trait
+(`events::Service`) - the archive service is the worked example.
 
 ## Credits & license
 
-This is a Rust port of the official 17Lands client,
-[`rconroy293/mtga-log-client`](https://github.com/rconroy293/mtga-log-client) (© its authors,
-GPL-3.0). It deliberately mirrors that client's behavior to stay wire-compatible with the
-17Lands API, so it is distributed under the same license: GPL-3.0-only. 
-See [`LICENSE`](LICENSE) for the full text and [`NOTICE`](NOTICE) for the
-attribution/derivation details. Release notes live in [`CHANGELOG.md`](CHANGELOG.md).
+Recall is heavily inspired by the great work of the 17lands team and the original
+[`rconroy293/mtga-log-client`](https://github.com/rconroy293/mtga-log-client) client.
+
+Recall is released under the [MIT License](LICENSE).
 
 Unofficial Fan Content permitted under Wizards of the Coast's Fan Content Policy; not
 approved/endorsed by Wizards. Portions © Wizards of the Coast LLC.

@@ -1,5 +1,5 @@
-# Virtual workspace. Two shipped artifacts — the `recall` CLI (`crates/cli`) and the
-# Tauri desktop app (`crates/desktop`) — share the wire-compatible core (`crates/core`).
+# Virtual workspace. Two shipped artifacts - the `recall` CLI (`crates/cli`) and the
+# Tauri desktop app (`crates/desktop`) - share the wire-compatible core (`crates/core`).
 #
 # `default-members` is the CLI + core only, so bare `cargo build/test/clippy` (and CI) skip the
 # desktop crate, which needs a system webview toolkit (webkit2gtk on Linux). Build it explicitly
@@ -12,7 +12,7 @@ default-members = ["crates/core", "crates/cli"]
 # Metadata shared by all workspace crates (each crate inherits with `field.workspace = true`).
 [workspace.package]
 version = "0.2.0"
-license = "GPL-3.0-only"
+license = "MIT"
 repository = "https://github.com/fredoliveira/recall"
-authors = ["Fred Oliveira <fred@helloform.com>"]
+authors = ["Fred Oliveira <hi@helloform.com>"]
 rust-version = "1.85"

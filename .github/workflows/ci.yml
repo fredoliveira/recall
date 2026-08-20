@@ -32,6 +32,9 @@ jobs:
       - name: Format check
         run: cargo fmt --check
 
+      - name: Markdown format check
+        run: npx --yes prettier@3 --check "**/*.md"
+
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 

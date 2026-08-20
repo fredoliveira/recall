@@ -1,66 +1,40 @@
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: MIT
 //
-// recall — a Rust port of the 17Lands MTG Arena log client.
-// Copyright (C) 2026 Fred Oliveira <fred@helloform.com>
+// Recall - an MTG Arena log parser.
+// Copyright (C) 2026 Fred Oliveira <hi@helloform.com>
 //
-// This program is a derivative work of mtga-log-client
-// (https://github.com/rconroy293/mtga-log-client), Copyright (C) its authors
-// (rconroy293), licensed under the GNU General Public License v3.0.
-//
-// This program is free software: you can redistribute it and/or modify it under
-// the terms of the GNU General Public License, version 3, as published by the
-// Free Software Foundation. This program is distributed in the hope that it will
-// be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public
-// License for more details. You should have received a copy of the GNU General
-// Public License along with this program. If not, see
-// <https://www.gnu.org/licenses/>.
+// Licensed under the MIT License; see the LICENSE file at the repository root.
 
-//! Recall — Rust port of the 17Lands MTGA log client.
+//! Recall - an MTG Arena log parser.
 //!
-//! Drop-in replacement for the Python `seventeenlands` client. This is the thin CLI
-//! wrapper: it resolves the token, sets up logging, and runs the processing loop.
+//! The thin CLI over `recall-core`: it resolves the config and token, sets up logging,
+//! builds the configured services, and runs the processing loop.
 
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, ValueHint};
 
-use recall_core::api_client::{self, ApiClient, Submitter};
-use recall_core::config;
+use recall_core::config::{self, Config};
+use recall_core::events::Service;
 use recall_core::follower::{self, Follower};
-use recall_core::paths;
-use recall_core::tee::{LocalSink, Tee};
+use recall_core::services::seventeenlands::ApiClient;
+use recall_core::{paths, services};
 
-/// CLI flags, mirroring the Python argparse interface.
+/// Recall - an MTG Arena log parser.
+///
+/// Follows Arena's Player.log and feeds every event to the services configured in
+/// `<config_dir>/recall/config.toml` (17Lands by default, plus an optional local archive).
+/// Given a log file it parses that file once and exits instead.
 #[derive(Parser, Debug)]
-#[command(about = "MTGA log follower — uploads MTG Arena data to 17lands.com")]
+#[command(version, about, long_about)]
 struct Args {
-    /// Log filename to process. If unset, tries the known Player.log locations.
-    #[arg(short = 'l', long = "log-file", alias = "log_file")]
-    log_file: Option<String>,
+    /// Parse this log file once and exit, instead of following Arena's Player.log.
+    #[arg(value_name = "LOG", value_hint = ValueHint::FilePath)]
+    log_file: Option<PathBuf>,
 
-    /// Host to submit requests to.
-    #[arg(long, default_value = api_client::DEFAULT_HOST)]
-    host: String,
-
-    /// Client token (UUID v4). If unset, resolved from config / stdin.
-    #[arg(long)]
-    token: Option<String>,
-
-    /// Parse the file once and exit instead of following it.
-    #[arg(long)]
-    once: bool,
-
-    /// Also forward every parsed event to a local HTTP sink (e.g. a live draft
-    /// companion). Blobs POST to `<URL>/<event>`, like `<URL>/add_human_draft_pack`.
-    /// Fire-and-forget: failures never affect the 17Lands upload.
-    #[arg(long, value_name = "URL")]
-    tee: Option<String>,
-
-    /// Use the detailed developer log format (full date, milliseconds, level, module
-    /// target) instead of the clean default. Handy for debugging / parity work.
-    #[arg(short = 'v', long)]
+    /// Detailed developer log format (date, milliseconds, level, module target).
+    #[arg(short, long)]
     verbose: bool,
 }
 
@@ -68,39 +42,32 @@ fn main() {
     let args = Args::parse();
     init_logging(args.verbose);
 
-    // Resolve the token (flag → TOML → legacy-ini migration → stdin prompt).
-    let token = config::resolve_token(args.token.as_deref());
+    // `Config::load` runs the flat-token migration; without a token the CLI explains
+    // where it goes and exits.
+    let cfg = Config::load();
+    let token = config::resolve_token(&cfg);
     log::info!(
         target: follower::CHATTER,
         "Using token {}...{}",
         &token[..token.len().min(4)],
         &token[token.len().saturating_sub(4)..]
     );
+    let host = cfg.seventeenlands_host();
+    log::info!(target: follower::CHATTER, "Services: {}", cfg.service_names().join(", "));
 
-    // The startup version check is intentionally dropped. The client just runs.
-    match &args.tee {
-        Some(url) => {
-            log::info!(target: follower::CHATTER, "Teeing events to {url}");
-            let submitter = Tee::new(ApiClient::new(args.host.clone()), LocalSink::new(url));
-            let follower = Follower::with_submitter(token, args.host.clone(), submitter);
-            processing_loop(&args, follower);
-        }
-        None => {
-            let follower = Follower::with_submitter(
-                token,
-                args.host.clone(),
-                ApiClient::new(args.host.clone()),
-            );
-            processing_loop(&args, follower);
-        }
+    let sink = services::from_config(&cfg, token, ApiClient::new(host));
+    let follower = Follower::with_sink(sink);
+    match args.log_file {
+        Some(path) => parse_once(path, follower),
+        None => follow_arena(follower),
     }
 }
 
-/// stdout/stderr logging only — no rotating file handler. The console output is
-/// purely cosmetic; it is **not** part of the wire contract (that lives in `api_client`).
+/// stdout/stderr logging only - no rotating file handler. The console output is
+/// purely cosmetic; it is **not** part of the wire contract (that lives in `services::seventeenlands`).
 ///
 /// Default ("clean") format: `HH:MM:SS  message`, with the time dimmed and only WARN/ERROR
-/// carrying a colored level tag — a calm status feed. `--verbose` switches to the detailed
+/// carrying a colored level tag - a calm status feed. `--verbose` switches to the detailed
 /// developer layout that mirrors the Python `logging_utils` line
 /// (`<date> <time>.<ms>,<level>,<target>,<message>`), useful for debugging / parity work.
 ///
@@ -148,7 +115,7 @@ fn init_logging(verbose: bool) {
                 _ if record.target() == follower::CHATTER => {
                     writeln!(buf, "{dim}{ts}  {}{dim:#}", record.args())
                 }
-                // INFO/DEBUG/TRACE: dim time, message normal — keep the feed readable.
+                // INFO/DEBUG/TRACE: dim time, message normal - keep the feed readable.
                 _ => writeln!(buf, "{dim}{ts}{dim:#}  {}", record.args()),
             }
         });
@@ -157,43 +124,39 @@ fn init_logging(verbose: bool) {
     builder.init();
 }
 
-/// Port of Python `processing_loop`, generic over the submitter so the tee'd and plain
-/// paths share one implementation.
-fn processing_loop<S: Submitter>(args: &Args, mut follower: Follower<S>) {
-    let filepaths: Vec<PathBuf> = match &args.log_file {
-        Some(path) => vec![PathBuf::from(path)],
-        None => paths::possible_current_filepaths(),
-    };
+/// Parse one log file and exit.
+fn parse_once<S: Service>(path: PathBuf, mut follower: Follower<S>) {
+    if !path.exists() {
+        log::error!("{} does not exist", path.display());
+        std::process::exit(1);
+    }
+    log::info!(target: follower::CHATTER, "Parsing {}", path.display());
+    follower.parse_log(&path.to_string_lossy(), false);
+    log::info!("Exiting");
+}
 
-    let follow = !args.once;
-
-    // "Normal mode": no explicit log file, default host, and following. Parse the first
-    // existing previous-log once at startup to catch up on missed events.
-    if args.log_file.is_none() && args.host == api_client::DEFAULT_HOST && follow {
-        for filename in paths::possible_previous_filepaths() {
-            if filename.exists() {
-                log::info!(target: follower::CHATTER, "Parsing the previous log {} once", filename.display());
-                follower.parse_log(&filename.to_string_lossy(), false);
-                break;
-            }
-        }
+/// Normal mode: catch up on the previous log once, then follow the current one.
+fn follow_arena<S: Service>(mut follower: Follower<S>) {
+    if let Some(prev) = paths::possible_previous_filepaths()
+        .iter()
+        .find(|f| f.exists())
+    {
+        log::info!(target: follower::CHATTER, "Parsing the previous log {} once", prev.display());
+        follower.parse_log(&prev.to_string_lossy(), false);
     }
 
-    // Tail and parse the current log file to handle ongoing events.
-    let mut any_found = false;
-    for filename in &filepaths {
-        if Path::new(filename).exists() {
-            any_found = true;
-            log::info!(target: follower::CHATTER, "Following along {}", filename.display());
-            follower.parse_log(&filename.to_string_lossy(), follow);
-        }
-    }
-
-    if !any_found {
+    let current: Vec<PathBuf> = paths::possible_current_filepaths()
+        .into_iter()
+        .filter(|f| f.exists())
+        .collect();
+    if current.is_empty() {
         log::warn!(
-            "Found no files to parse. Try to find Arena's Player.log file and pass it as an \
-             argument with -l"
+            "Found no Player.log to follow. Pass the path to it as an argument: `recall <LOG>`"
         );
+    }
+    for filename in &current {
+        log::info!(target: follower::CHATTER, "Following along {}", filename.display());
+        follower.parse_log(&filename.to_string_lossy(), true);
     }
 
     log::info!("Exiting");

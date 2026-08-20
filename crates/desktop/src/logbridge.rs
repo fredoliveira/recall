@@ -1,6 +1,6 @@
 //! Bridges the core's `log` output into the webview.
 //!
-//! The follower has no callback/observer hooks — everything it does is reported through the
+//! The follower has no callback/observer hooks - everything it does is reported through the
 //! `log` crate. We install a global `log::Log` sink that (a) keeps a capped ring buffer so a
 //! freshly-opened window can backfill recent lines, and (b) emits each line as a `log-line`
 //! event to the webview. The logger is installed before the Tauri app exists; [`attach`] wires
@@ -22,7 +22,7 @@ pub struct LogLine {
     pub level: String,
     pub target: String,
     pub msg: String,
-    /// Background-sync chatter (`follower::CHATTER`) — rendered dimmed by the UI.
+    /// Background-sync chatter (`follower::CHATTER`) - rendered dimmed by the UI.
     pub chatter: bool,
 }
 
@@ -35,7 +35,7 @@ impl WebviewLogger {
     /// Install as the global logger. Safe to call once at startup.
     pub fn install() {
         if log::set_boxed_logger(Box::new(WebviewLogger)).is_ok() {
-            // Debug needed: api_client logs upload success ("<endpoint> -> 200") at debug.
+            // Debug needed: the 17Lands transport logs upload success ("<endpoint> -> 200") at debug.
             log::set_max_level(LevelFilter::Debug);
         }
     }

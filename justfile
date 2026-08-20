@@ -7,7 +7,7 @@ default:
 
 # --- Run ---------------------------------------------------------------------
 
-# Extra args pass through: `just run --once`, `just run -l path/to/Player.log`.
+# Extra args pass through: `just run path/to/Player.log` parses that file once.
 # Build and run the CLI, following the auto-detected Player.log.
 run *ARGS:
     cargo run -p recall -- {{ARGS}}
@@ -15,6 +15,13 @@ run *ARGS:
 # Replay a log through the client offline (prints payloads, uploads nothing).
 replay LOG:
     cargo run -p recall-core --example replay -- {{LOG}}
+
+# Check parser output against golden snapshots of the real local logs (refactor net;
+# baselines are written on first run and live under gitignored local/golden/).
+golden:
+    for f in local/logs/*.log; do \
+        cargo run -q -p recall-core --example golden -- "$f" "local/golden/$(basename "$f" .log).jsonl" || exit 1; \
+    done
 
 # --- Desktop app -------------------------------------------------------------
 
@@ -38,9 +45,14 @@ desktop-build:
 test:
     cargo test
 
+# Reflow all Markdown to 100 columns (Prettier via npx; config in .prettierrc).
+fmt-md:
+    npx --yes prettier@3 --write "**/*.md"
+
 # Pre-commit gate, mirroring CI: format check + clippy (all crates) + tests.
 lint:
     cargo fmt --check
+    npx --yes prettier@3 --check "**/*.md"
     cargo clippy --all-targets -- -D warnings
     cargo clippy -p recall-desktop --all-targets -- -D warnings
     cargo test

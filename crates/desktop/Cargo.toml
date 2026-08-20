@@ -1,6 +1,6 @@
 [package]
 name = "recall-desktop"
-description = "Recall desktop — menu-bar app that uploads MTGA logs to 17Lands"
+description = "Recall desktop - menu-bar app for the Recall MTG Arena log parser"
 edition = "2021"
 version.workspace = true
 license.workspace = true
@@ -21,5 +21,5 @@ serde_json = "1"
 # `std` provides `set_boxed_logger` for the webview log sink.
 log = { version = "0.4", features = ["std"] }
 chrono = "0.4"
-# The wire-compatible core: we reuse its follower, config, paths, and api_client unchanged.
+# The shared core: we reuse its follower, config, paths, and services unchanged.
 recall-core = { path = "../core" }

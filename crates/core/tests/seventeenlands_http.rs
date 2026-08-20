@@ -1,6 +1,6 @@
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: MIT
 
-//! Integration tests for the live `ApiClient` HTTP path.
+//! Integration tests for the 17Lands transport (`services::seventeenlands::ApiClient`) HTTP path.
 //!
 //! Drives the real client against a loopback `TcpListener` mock so we exercise ureq,
 //! header/body construction, gzip, and the retry/normalization layer end-to-end without
@@ -12,7 +12,7 @@ use std::thread;
 
 use serde_json::json;
 
-use recall_core::api_client::{ApiClient, Submitter, to_python_json_vec};
+use recall_core::services::seventeenlands::{ApiClient, Submitter, to_python_json_vec};
 
 /// A captured HTTP request.
 struct CapturedRequest {
@@ -117,7 +117,7 @@ fn posts_plain_json_with_expected_method_path_and_body() {
     let mut client = ApiClient::new(host);
 
     let payload = json!({"token": "abc", "player_id": "p1", "screen_name": "Tester"});
-    client.submit_user(payload.clone());
+    client.submit("api/client/add_mtga_account", payload.clone(), false);
 
     let reqs = handle.join().unwrap();
     assert_eq!(reqs.len(), 1);
@@ -142,7 +142,7 @@ fn posts_gzipped_game_result_with_content_encoding() {
     let mut client = ApiClient::new(host);
 
     let payload = json!({"match_id": "m1", "won": true, "turns": 9});
-    client.submit_game_result(payload.clone());
+    client.submit("api/client/add_game", payload.clone(), true);
 
     let reqs = handle.join().unwrap();
     let req = &reqs[0];
@@ -161,12 +161,12 @@ fn posts_gzipped_game_result_with_content_encoding() {
 #[test]
 fn does_not_retry_on_4xx() {
     // A 404 is "valid" per the response validator (status < 500), so exactly one request
-    // is made — no retry. (If it retried, the mock would block on a 2nd accept and the
+    // is made - no retry. (If it retried, the mock would block on a 2nd accept and the
     // join below would hang; one queued response proves single-shot.)
     let (host, handle) = spawn_mock(vec!["HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"]);
     let mut client = ApiClient::new(host);
 
-    client.submit_rank(json!({"rank_data": null}));
+    client.submit("api/client/add_rank", json!({"rank_data": null}), false);
 
     let reqs = handle.join().unwrap();
     assert_eq!(reqs.len(), 1, "4xx must not trigger a retry");

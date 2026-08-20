@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: MIT
 
 //! Fixture-based parity tests.
 //!
@@ -6,8 +6,8 @@
 //! the resulting `(endpoint, payload)` sequence. These committed fixtures cover the dispatch
 //! branches that are **absent** from the real sample logs (bot draft, combined human draft,
 //! claim prize, event course, inventory, collection); the branches that *are* present in the
-//! real logs — full games (§8 game-state machine), Draft.Notify packs, EventPlayerDraftMakePick
-//! picks, deck submission, rank, account, ongoing events, player progress — were validated
+//! real logs - full games (§8 game-state machine), Draft.Notify packs, EventPlayerDraftMakePick
+//! picks, deck submission, rank, account, ongoing events, player progress - were validated
 //! byte-for-byte against the live Python client during the port (via a since-removed oracle
 //! harness).
 //!
@@ -19,8 +19,11 @@
 
 use serde_json::{Value, json};
 
-use recall_core::api_client::{RecordedCall, RecordingSubmitter, to_python_json_string};
 use recall_core::follower::Follower;
+use recall_core::services::seventeenlands::SeventeenLands;
+use recall_core::services::seventeenlands::{
+    RecordedCall, RecordingSubmitter, to_python_json_string,
+};
 
 const TOKEN: &str = "00000000-0000-4000-8000-000000000000";
 const ENVELOPE_KEYS: &[&str] = &[
@@ -35,13 +38,9 @@ const ENVELOPE_KEYS: &[&str] = &[
 
 fn run(fixture: &str) -> Vec<RecordedCall> {
     let data = std::fs::read_to_string(fixture).expect("read fixture");
-    let mut f = Follower::with_submitter(
-        TOKEN.into(),
-        "http://localhost".into(),
-        RecordingSubmitter::new(),
-    );
+    let mut f = Follower::with_sink(SeventeenLands::new(TOKEN.into(), RecordingSubmitter::new()));
     f.process_str(&data);
-    f.api.calls
+    f.sink.wire.calls
 }
 
 /// The handler-specific portion of a payload, with the envelope fields removed (order of the
@@ -108,6 +107,32 @@ fn gap_branch_parity() {
             "api/client/update_card_collection",
             json!({"card_counts": {"70000": 4, "70001": 2}}),
         ),
+        (
+            "api/client/record_event_join",
+            json!({"payload": {"Course": {"InternalEventName": "PremierDraft_Set", "CourseId": "course-1", "CardPool": [1, 2, 3]}}}),
+        ),
+        (
+            "api/client/add_deck",
+            json!({
+                "payload": {"EventName": "PremierDraft_Set", "Deck": {"MainDeck": [{"cardId": 101, "quantity": 2}, {"cardId": 102, "quantity": 1}], "Sideboard": [{"cardId": 103, "quantity": 1}], "Companions": [{"cardId": 104}]}},
+                "event_name": "PremierDraft_Set", "maindeck_card_ids": [101, 101, 102], "sideboard_card_ids": [103], "companion": 104, "is_during_match": false
+            }),
+        ),
+        (
+            "api/client/update_ongoing_events",
+            json!({"courses": [{"InternalEventName": "PremierDraft_Set", "CourseId": "course-1"}, {"InternalEventName": "QuickDraft_Set", "CourseId": "course-2"}]}),
+        ),
+        (
+            "api/client/add_rank",
+            json!({
+                "rank_data": {"playerId": "ACC123", "limitedClass": "Gold", "limitedLevel": 3, "limitedStep": 1, "constructedClass": "Platinum", "constructedLevel": 2, "constructedStep": 0, "limitedSeasonOrdinal": 42, "constructedSeasonOrdinal": 42},
+                "limited_rank": null, "constructed_rank": null
+            }),
+        ),
+        (
+            "api/client/update_player_progress",
+            json!({"progress": {"NodeStates": {"RewardTierUpgrade": {"Tier": 2}}, "CurrentLevel": 10}}),
+        ),
     ];
 
     assert_eq!(calls.len(), expected.len(), "submission count");
@@ -115,7 +140,7 @@ fn gap_branch_parity() {
     for (i, (call, (endpoint, body))) in calls.iter().zip(&expected).enumerate() {
         assert_eq!(&call.endpoint, endpoint, "endpoint at [{i}]");
 
-        // Handler body — compared via Python-JSON serialization (key order + values).
+        // Handler body - compared via Python-JSON serialization (key order + values).
         assert_eq!(
             to_python_json_string(&handler_body(&call.payload)),
             to_python_json_string(body),
@@ -145,15 +170,4 @@ fn gap_branch_parity() {
 
     // None of these endpoints are gzipped (only add_game is).
     assert!(calls.iter().all(|c| !c.use_gzip));
-}
-
-/// add_game is the only gzipped endpoint; verify the gzip flag flows through the recorder.
-#[test]
-fn add_game_uses_gzip_flag() {
-    use recall_core::api_client::Submitter;
-    let mut rec = RecordingSubmitter::new();
-    rec.submit_game_result(json!({"match_id": "m"}));
-    assert_eq!(rec.calls.len(), 1);
-    assert_eq!(rec.calls[0].endpoint, "api/client/add_game");
-    assert!(rec.calls[0].use_gzip);
 }

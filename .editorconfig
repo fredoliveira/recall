@@ -1,0 +1,25 @@
+# https://editorconfig.org - honored natively or via plugin by most editors.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.md]
+# Hard line breaks are written with a backslash, never two trailing spaces.
+trim_trailing_whitespace = true
+max_line_length = 100
+
+[*.{toml,yml,yaml,json}]
+indent_size = 2
+
+[justfile]
+indent_style = space
+indent_size = 4
+
+# Line length is enforced by Prettier (`just fmt-md`; checked in `just lint` and CI) -
+# EditorConfig's max_line_length is only a hint to editors.

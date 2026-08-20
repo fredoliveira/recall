@@ -2,14 +2,14 @@
 
 use tauri::State;
 
-use recall_core::config;
+use recall_core::config::{self, Config};
 
 use crate::logbridge::{self, LogLine};
 use crate::state::{AppState, StatusDto};
 
 #[tauri::command]
 pub fn token_present() -> bool {
-    config::read_toml_token().is_some()
+    Config::load().seventeenlands_token().is_some()
 }
 
 /// Validate (UUID v4) and persist the token to the same file the CLI reads, then (re)start.
@@ -17,7 +17,13 @@ pub fn token_present() -> bool {
 pub fn save_token(token: String, state: State<AppState>) -> Result<(), String> {
     let valid = config::validate_uuid_v4(token.trim())
         .ok_or("That doesn't look like a valid 17Lands token (expected a UUID).")?;
-    config::write_toml_token(&valid);
+    // Strict: a config that exists but won't parse must not be overwritten with defaults
+    // (that would silently drop the user's archive/host settings).
+    let mut cfg = Config::load_strict()
+        .map_err(|e| format!("Could not read the existing config; fix or remove it first: {e}"))?;
+    cfg.set_seventeenlands_token(&valid);
+    cfg.save()
+        .map_err(|e| format!("Could not save config: {e}"))?;
     state.restart()
 }
 

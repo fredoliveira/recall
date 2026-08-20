@@ -3,5 +3,5 @@
 # Tauri build-time generated schemas/code (desktop crate).
 /crates/desktop/gen/
 
-# Raw MTGA logs — contain account id / screen name / token. NEVER commit.
+# Raw MTGA logs - contain account id / screen name / token. NEVER commit.
 /local/
