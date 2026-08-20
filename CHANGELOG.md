@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-20
+
 ### Added
 
 - Per-service configuration: `[services.<name>]` sections in `config.toml`
@@ -25,6 +27,8 @@ All notable changes to this project are documented here. The format is based on
 ### Removed
 
 - `--tee <URL>`. Secondary outputs are now services configured in `config.toml` rather than flags.
+- The `--log-file`/`-l`, `--host`, `--token` and `--once` flags. The CLI is now `recall [LOG] [-v]`;
+  the host comes from `services.seventeenlands.host`.
 - The `~/.mtga_follower.ini` import and the interactive stdin token prompt. With no token configured
   the CLI prints the config path and exits.
 - `NOTICE` and `ROADMAP.md`.
@@ -77,7 +81,8 @@ Initial release. A drop-in, wire-compatible Rust port of the official 17Lands MT
 - Oracle parity tooling (`tools/oracle/`, `examples/oracle_diff.rs`) and an offline `replay`
   example.
 
-[Unreleased]: https://github.com/fredoliveira/recall/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/fredoliveira/recall/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/fredoliveira/recall/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/fredoliveira/recall/compare/v0.1.3...v0.2.0
 [0.1.2]: https://github.com/fredoliveira/recall/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/fredoliveira/recall/compare/v0.1.0...v0.1.1
