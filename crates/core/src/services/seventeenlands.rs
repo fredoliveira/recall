@@ -24,7 +24,7 @@ use crate::events::{DeckEntry, DraftSource, GameEvent, Service, opt_i64, opt_str
 pub mod transport;
 
 pub use transport::{
-    ApiClient, RecordedCall, RecordingSubmitter, Submitter, to_python_json_string,
+    ApiClient, RecordedCall, RecordingSubmitter, SubmitOutcome, Submitter, to_python_json_string,
     to_python_json_vec,
 };
 
@@ -320,6 +320,7 @@ impl<S: Submitter> Service for SeventeenLands<S> {
             payload.insert(k, v);
         }
         let (endpoint, use_gzip) = route(event);
+        // The outcome is for observers; the client has already logged any failure.
         self.wire.submit(endpoint, Value::Object(payload), use_gzip);
     }
 }

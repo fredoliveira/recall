@@ -41,6 +41,8 @@ pub struct StatusDto {
     pub upload_count: u64,
     pub last_endpoint: Option<String>,
     pub last_time: Option<String>,
+    pub upload_failed: u64,
+    pub last_failure: Option<String>,
     /// Enabled service names, primary first (e.g. `["seventeenlands"]`).
     pub services: Vec<String>,
     /// Crate version (e.g. "0.1.1"), rendered in the in-window header.
@@ -170,6 +172,8 @@ impl AppState {
             upload_count: u.count,
             last_endpoint: u.last_endpoint,
             last_time: u.last_time,
+            upload_failed: u.failed,
+            last_failure: u.last_failure,
             services: cfg.service_names(),
             app_version: env!("CARGO_PKG_VERSION").to_string(),
         }

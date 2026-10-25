@@ -29,7 +29,19 @@ use serde_json::Value;
 /// bytes ([`ApiClient`] over HTTP, [`RecordingSubmitter`] into a Vec for the parity
 /// tests, the desktop's observer as a decorator).
 pub trait Submitter {
-    fn submit(&mut self, endpoint: &str, payload: Value, use_gzip: bool);
+    fn submit(&mut self, endpoint: &str, payload: Value, use_gzip: bool) -> SubmitOutcome;
+}
+
+/// What became of one submission. Failures are already logged by the client; the outcome
+/// exists for observers (the desktop status), and the follower carries on regardless.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubmitOutcome {
+    /// 2xx, possibly after retries.
+    Accepted,
+    /// The server answered non-2xx and wasn't retried: the event was not uploaded.
+    Rejected { status: u16 },
+    /// Never answered: transport error, gzip failure, or retries exhausted.
+    Failed,
 }
 
 /// The live REST client (port of `api_client.ApiClient`).
@@ -44,7 +56,7 @@ impl ApiClient {
 }
 
 impl Submitter for ApiClient {
-    fn submit(&mut self, endpoint: &str, payload: Value, use_gzip: bool) {
+    fn submit(&mut self, endpoint: &str, payload: Value, use_gzip: bool) -> SubmitOutcome {
         let url = format!("{}/{}", self.host, endpoint);
         let json_bytes = to_python_json_vec(&payload);
 
@@ -53,33 +65,88 @@ impl Submitter for ApiClient {
                 Ok(b) => b,
                 Err(e) => {
                     log::error!("Failed to gzip payload for {endpoint}: {e}");
-                    return;
+                    return SubmitOutcome::Failed;
                 }
             }
         } else {
             json_bytes
         };
 
+        let mut throttled = 0u32;
         let result = crate::retry::retry_api_call(
-            || send_post(&url, &body, use_gzip),
-            |resp: &ureq::Response| {
-                // Retry only 5xx: valid when status is outside 500..600.
-                !(500..600).contains(&resp.status())
+            || -> Result<ureq::Response, Box<ureq::Transport>> {
+                let resp = send_post(&url, &body, use_gzip)?;
+                if is_throttled(&resp) {
+                    throttled += 1;
+                    // Warn once per submission; the backoff can run for hours.
+                    if throttled == 1 {
+                        log::warn!(
+                            "17Lands is rate-limiting uploads ({endpoint} -> {}); \
+                             holding this event and retrying with backoff",
+                            resp.status()
+                        );
+                    } else {
+                        log::debug!("{endpoint} still rate-limited (attempt {throttled})");
+                    }
+                }
+                Ok(resp)
             },
+            |resp: &ureq::Response| !(is_server_error(resp) || is_throttled(resp)),
         );
 
         match result {
-            Ok(resp) => {
+            Ok(resp) if (200..300).contains(&resp.status()) => {
+                if throttled > 0 {
+                    log::info!("{endpoint} accepted after {throttled} rate-limited attempt(s)");
+                }
                 log::debug!("{endpoint} -> {}", resp.status());
+                SubmitOutcome::Accepted
+            }
+            Ok(resp) => {
+                let status = resp.status();
+                log::warn!(
+                    "17Lands rejected {endpoint} (HTTP {status}{}); this event was not uploaded",
+                    body_excerpt(resp)
+                        .map(|b| format!(": {b}"))
+                        .unwrap_or_default()
+                );
+                SubmitOutcome::Rejected { status }
             }
             Err(crate::retry::RetryError::LimitExceeded) => {
-                log::error!("Giving up on {endpoint} after exhausting retries (server 5xx)");
+                log::error!(
+                    "Giving up on {endpoint} after exhausting retries (server 5xx or rate limit)"
+                );
+                SubmitOutcome::Failed
             }
             Err(crate::retry::RetryError::Fatal(e)) => {
                 log::error!("Transport error posting to {endpoint}: {e}");
+                SubmitOutcome::Failed
             }
         }
     }
+}
+
+fn is_server_error(resp: &ureq::Response) -> bool {
+    (500..600).contains(&resp.status())
+}
+
+/// 429, or a 403 the AWS load balancer generated itself: 17Lands' rate-limit firewall
+/// answers every request from a throttled IP that way (`Server: awselb/…`, HTML body)
+/// until the rate drops. A 403 from the app has no `awselb` server header and is a real
+/// rejection. Deliberate deviation: upstream retries only 5xx and drops these events.
+fn is_throttled(resp: &ureq::Response) -> bool {
+    resp.status() == 429
+        || (resp.status() == 403
+            && resp
+                .header("server")
+                .is_some_and(|s| s.to_ascii_lowercase().starts_with("awselb")))
+}
+
+/// The first line of an error body (e.g. the server's reason for a 400), trimmed for a log line.
+fn body_excerpt(resp: ureq::Response) -> Option<String> {
+    let text = resp.into_string().ok()?;
+    let line = text.lines().map(str::trim).find(|l| !l.is_empty())?;
+    Some(line.chars().take(200).collect())
 }
 
 /// Send one POST. Non-2xx HTTP responses are normalized from `Err(Status)` back to
@@ -192,12 +259,13 @@ impl RecordingSubmitter {
 }
 
 impl Submitter for RecordingSubmitter {
-    fn submit(&mut self, endpoint: &str, payload: Value, use_gzip: bool) {
+    fn submit(&mut self, endpoint: &str, payload: Value, use_gzip: bool) -> SubmitOutcome {
         self.calls.push(RecordedCall {
             endpoint: endpoint.to_string(),
             payload,
             use_gzip,
         });
+        SubmitOutcome::Accepted
     }
 }
 

@@ -59,6 +59,7 @@ nav { display: flex; gap: 4px; }
 }
 
 .muted { color: var(--muted); }
+.warn { color: var(--warn); }
 
 .view { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px 12px; }
 .view.hidden { display: none; }

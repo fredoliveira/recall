@@ -121,6 +121,8 @@ The local reference copy is gone; diff against GitHub directly. When upstream re
 - Deliberate deviations from upstream: per-service config at `<config_dir>/recall/config.toml`
   (`services.seventeenlands.token`; a flat `token` auto-migrates), no token prompt of any kind, no
   startup version check, no server-side error reporting, stdout/stderr logging only.
+- Rate limiting (429, or a 403 from the `awselb` firewall) is retried like a 5xx; upstream drops
+  those events. 4xx rejections log at WARN.
 - Naming: the product is Recall; nothing that reaches the 17Lands server is renamed (payloads,
   `CLIENT_VERSION`, endpoints), and "17Lands" stays wherever it means the service.
 - Non-wire seams for the desktop app: `config::Config::{load, save}` and `services::from_config` are

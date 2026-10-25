@@ -12,7 +12,9 @@ use std::thread;
 
 use serde_json::json;
 
-use recall_core::services::seventeenlands::{ApiClient, Submitter, to_python_json_vec};
+use recall_core::services::seventeenlands::{
+    ApiClient, SubmitOutcome, Submitter, to_python_json_vec,
+};
 
 /// A captured HTTP request.
 struct CapturedRequest {
@@ -117,7 +119,8 @@ fn posts_plain_json_with_expected_method_path_and_body() {
     let mut client = ApiClient::new(host);
 
     let payload = json!({"token": "abc", "player_id": "p1", "screen_name": "Tester"});
-    client.submit("api/client/add_mtga_account", payload.clone(), false);
+    let outcome = client.submit("api/client/add_mtga_account", payload.clone(), false);
+    assert_eq!(outcome, SubmitOutcome::Accepted);
 
     let reqs = handle.join().unwrap();
     assert_eq!(reqs.len(), 1);
@@ -166,9 +169,62 @@ fn does_not_retry_on_4xx() {
     let (host, handle) = spawn_mock(vec!["HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"]);
     let mut client = ApiClient::new(host);
 
-    client.submit("api/client/add_rank", json!({"rank_data": null}), false);
+    let outcome = client.submit("api/client/add_rank", json!({"rank_data": null}), false);
+    assert_eq!(outcome, SubmitOutcome::Rejected { status: 404 });
 
     let reqs = handle.join().unwrap();
     assert_eq!(reqs.len(), 1, "4xx must not trigger a retry");
     assert_eq!(reqs[0].request_line, "POST /api/client/add_rank HTTP/1.1");
+}
+
+#[test]
+fn app_level_403_is_rejected_without_retry() {
+    // A 403 the app itself returns (no `Server: awselb`) is a real rejection, not throttling.
+    let (host, handle) = spawn_mock(vec![
+        "HTTP/1.1 403 Forbidden\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}",
+    ]);
+    let mut client = ApiClient::new(host);
+
+    let outcome = client.submit("api/client/add_rank", json!({"rank_data": null}), false);
+    assert_eq!(outcome, SubmitOutcome::Rejected { status: 403 });
+    assert_eq!(handle.join().unwrap().len(), 1);
+}
+
+#[test]
+fn retries_429_until_accepted() {
+    let (host, handle) = spawn_mock(vec![
+        "HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        RESP_200,
+    ]);
+    let mut client = ApiClient::new(host);
+
+    let payload = json!({"match_id": "m1"});
+    let outcome = client.submit("api/client/add_game", payload.clone(), true);
+    assert_eq!(outcome, SubmitOutcome::Accepted);
+
+    let reqs = handle.join().unwrap();
+    assert_eq!(reqs.len(), 2, "429 must be retried, not dropped");
+    assert_eq!(
+        reqs[0].body, reqs[1].body,
+        "the retry resends the same event"
+    );
+}
+
+#[test]
+fn retries_load_balancer_firewall_403_until_accepted() {
+    // What 17Lands' AWS load balancer returns to a rate-limited IP.
+    let (host, handle) = spawn_mock(vec![
+        "HTTP/1.1 403 Forbidden\r\nServer: awselb/2.0\r\nContent-Type: text/html\r\n\
+         Content-Length: 9\r\nConnection: close\r\n\r\nForbidden",
+        RESP_200,
+    ]);
+    let mut client = ApiClient::new(host);
+
+    let outcome = client.submit("api/client/add_rank", json!({"rank_data": null}), false);
+    assert_eq!(outcome, SubmitOutcome::Accepted);
+    assert_eq!(
+        handle.join().unwrap().len(),
+        2,
+        "firewall 403 must be retried"
+    );
 }

@@ -62,9 +62,16 @@ async function refreshStatus() {
   else text = "Stopped";
   $("status-text").textContent = text;
 
-  $("status-uploads").textContent = s.upload_count
-    ? `${s.upload_count} uploads · last ${s.last_endpoint || "?"} @ ${s.last_time || ""}`
-    : "";
+  const uploads = $("status-uploads");
+  const parts = [];
+  if (s.upload_count) {
+    parts.push(`${s.upload_count} uploads · last ${s.last_endpoint || "?"} @ ${s.last_time || ""}`);
+  }
+  if (s.upload_failed) {
+    parts.push(`${s.upload_failed} failed · last ${s.last_failure || "?"}`);
+  }
+  uploads.textContent = parts.join(" · ");
+  uploads.className = s.upload_failed ? "warn" : "muted";
 
   $("host").textContent = s.host;
   if (s.app_version) {

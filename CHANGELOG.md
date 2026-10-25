@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- Upload failures are no longer silent. A 4xx from 17Lands is logged as a warning (with the server's
+  reason) instead of a debug line indistinguishable from success.
+- Rate limiting no longer drops events: a 429, or the 403 17Lands' load-balancer firewall returns to
+  a throttled IP, is retried with the same backoff as a 5xx, with a warning while it lasts.
+- The desktop status counts only accepted uploads and shows failed ones separately.
+
 ## [0.3.0] - 2026-08-20
 
 ### Added

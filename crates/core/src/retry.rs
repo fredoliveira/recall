@@ -3,7 +3,8 @@
 //! Exponential-backoff retry (port of `retry_utils.py`).
 //!
 //! - initial 1s, ×2 each attempt, capped at 10min, max total 24h.
-//! - response valid when `status < 500 || status >= 600` (retry only 5xx).
+//! - which responses to retry is the caller's validator (upstream: only 5xx; the 17Lands
+//!   transport also retries rate limiting).
 //! - retry on transport/connection errors only; re-raise others.
 //! - ⚠️ `ureq` maps non-2xx to `Err(Status)` - the caller (`services::seventeenlands::transport`) normalizes those
 //!   back into `Ok(Response)` so HTTP responses (incl. 4xx/5xx) reach the

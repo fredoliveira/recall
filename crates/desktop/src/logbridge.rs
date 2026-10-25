@@ -35,7 +35,8 @@ impl WebviewLogger {
     /// Install as the global logger. Safe to call once at startup.
     pub fn install() {
         if log::set_boxed_logger(Box::new(WebviewLogger)).is_ok() {
-            // Debug needed: the 17Lands transport logs upload success ("<endpoint> -> 200") at debug.
+            // Debug needed: the 17Lands transport logs upload success ("<endpoint> -> 200") at debug
+            // (failures and rate limiting are WARN/ERROR).
             log::set_max_level(LevelFilter::Debug);
         }
     }
