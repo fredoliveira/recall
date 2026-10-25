@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-25
+
 ### Fixed
 
 - Upload failures are no longer silent. A 4xx from 17Lands is logged as a warning (with the server's
@@ -89,7 +91,8 @@ Initial release. A drop-in, wire-compatible Rust port of the official 17Lands MT
 - Oracle parity tooling (`tools/oracle/`, `examples/oracle_diff.rs`) and an offline `replay`
   example.
 
-[Unreleased]: https://github.com/fredoliveira/recall/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/fredoliveira/recall/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/fredoliveira/recall/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/fredoliveira/recall/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/fredoliveira/recall/compare/v0.1.3...v0.2.0
 [0.1.2]: https://github.com/fredoliveira/recall/compare/v0.1.1...v0.1.2
