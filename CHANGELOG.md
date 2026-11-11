@@ -30,6 +30,13 @@ All notable changes to this project are documented here. The format is based on
 
 - Desktop: stopping and restarting the follower (saving a token, changing the log path) no longer
   drops the parser's state, which left events without a player id and lost a game in progress.
+- Desktop: Quit, saving a token and changing the log path no longer hang while an upload is waiting
+  to be retried (up to ten minutes when 17Lands is down or rate-limiting). The interrupted event is
+  uploaded on the next start.
+- `config.toml`, which holds the token, is now written readable by its owner only (0600) on macOS
+  and Linux; an existing file is tightened the next time it is saved.
+- Debug output no longer includes raw Arena log entries, which could show account details in the
+  desktop log window.
 - The declared minimum Rust version is now 1.88, which the code has needed since it adopted
   let-chains (it said 1.85).
 
@@ -86,6 +93,18 @@ All notable changes to this project are documented here. The format is based on
   under the old `17l/` dir are not migrated - re-enter yours once). The wire protocol is unchanged:
   uploads still go to 17Lands, identified as the upstream Python client.
 
+## [0.1.3] - 2026-07-13
+
+### Added
+
+- Desktop menu-bar app (Tauri v2) on the same parser as the CLI: tray status, a log window, token
+  and log-path settings. Published as a `.dmg` with a Homebrew cask.
+
+### Changed
+
+- The repository is a Cargo workspace (`core`, `cli`, `desktop`), and the desktop bundle is built by
+  its own release workflow.
+
 ## [0.1.2] - 2026-07-13
 
 ### Added
@@ -122,6 +141,7 @@ Initial release. A drop-in, wire-compatible Rust port of the official 17Lands MT
 [0.3.1]: https://github.com/fredoliveira/recall/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/fredoliveira/recall/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/fredoliveira/recall/compare/v0.1.3...v0.2.0
+[0.1.3]: https://github.com/fredoliveira/recall/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/fredoliveira/recall/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/fredoliveira/recall/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/fredoliveira/recall/releases/tag/v0.1.0
