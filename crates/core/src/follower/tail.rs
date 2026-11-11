@@ -296,9 +296,12 @@ impl<S: Service> Follower<S> {
             self.last_blob = full_log;
         } else {
             // Dedup hits are pure noise on the console (e.g. repeated "AK Message: Audio
-            // thread resumed" lines); keep them at debug so `RUST_LOG=debug` can still show
-            // them. Console-only - no effect on the wire (upstream logs this at info).
-            log::debug!("Skipping repeated complete log entry: {full_log}");
+            // thread resumed" lines); keep them at debug, and without the entry itself (raw
+            // Arena output). Console-only - no effect on the wire (upstream logs this at info).
+            log::debug!(
+                "Skipping repeated complete log entry ({} bytes)",
+                full_log.len()
+            );
         }
 
         self.buffer.clear();

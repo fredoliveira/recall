@@ -22,9 +22,12 @@ impl<S: Service> Follower<S> {
         let json_obj = match stream.next() {
             Some(Ok(v)) => v,
             _ => {
+                // The entry itself stays out of the log: it is raw Arena output and can
+                // carry account details.
                 log::debug!(
-                    "JSON decode error at {} for: {full_log}",
-                    isoformat(&self.cur_log_time)
+                    "JSON decode error at {} ({} bytes)",
+                    isoformat(&self.cur_log_time),
+                    full_log.len()
                 );
                 return;
             }
