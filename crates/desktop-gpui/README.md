@@ -29,7 +29,7 @@ Or `just desktop-gpui-dev` from the repo root. The toolchain is named explicitly
 | ------------------- | ------------------------------------------------------------------------- |
 | `src/main.rs`       | App setup: menus, keys, the menu-bar icon, the task that drains the feed  |
 | `src/feed.rs`       | `Signal` channel, the `log` sink, and the `Feed` entity the windows watch |
-| `src/log_window.rs` | The main window: status line, log, footer                                 |
+| `src/log_window.rs` | The main window: the log, and a status line under it                      |
 | `src/settings.rs`   | The Settings window: token and log file                                   |
 | `src/tray.rs`       | The menu-bar icon (`tray-icon`; GPUI has no status-item API)              |
 | `src/style.rs`      | Every size in the windows, in one place to tweak                          |
@@ -38,9 +38,18 @@ Or `just desktop-gpui-dev` from the repo root. The toolchain is named explicitly
 
 Dependencies: `gpui-kit` 0.9.0, which pins its GPUI snapshot (`gpui-pre` 0.3.11).
 
+## Bundle
+
+```sh
+scripts/bundle.sh --universal --dmg   # dist/Recall.app and dist/Recall-universal.dmg
+```
+
+Signed with your Developer ID (hardened runtime), not notarized. The bundle has the installed app's
+identifier and, like it, uploads to the live host: quit the installed Recall before opening it. The
+universal build needs `rustup target add x86_64-apple-darwin` on the pinned toolchain.
+
 ## Not done yet
 
-- Bundling: no `.app`, signing, notarization or universal build. The release workflow still ships
-  the Tauri app.
+- Releasing: the release workflow still ships the Tauri app, and nothing here is notarized yet.
 - UI tests (GPUI has a headless harness).
 - Selecting and copying log text.
