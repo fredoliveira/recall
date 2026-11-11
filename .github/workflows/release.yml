@@ -12,8 +12,30 @@ permissions:
   contents: write
 
 jobs:
+  # Gate: nothing is built or published unless the tag matches the manifest versions and
+  # the test suite passes on the tagged commit.
+  verify:
+    name: verify (version + tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the manifest versions
+        if: startsWith(github.ref, 'refs/tags/')
+        run: sh tools/check_release_version.sh "$GITHUB_REF_NAME"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Test
+        run: cargo test --locked --all-targets
+
   build:
     name: ${{ matrix.target }}
+    needs: [verify]
     strategy:
       fail-fast: false
       matrix:
@@ -39,7 +61,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build CLI
-        run: cargo build --release --target ${{ matrix.target }} -p recall
+        run: cargo build --release --locked --target ${{ matrix.target }} -p recall
 
       - name: Package (unix)
         if: runner.os != 'Windows'
