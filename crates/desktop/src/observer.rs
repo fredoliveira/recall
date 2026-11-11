@@ -67,6 +67,8 @@ impl Submitter for ObservingSubmitter {
                     s.failed += 1;
                     s.last_failure = Some(format!("{short}: HTTP {status} @ {now}"));
                 }
+                // A stop, not a lost event: the next start uploads it.
+                SubmitOutcome::Cancelled => {}
                 SubmitOutcome::Failed => {
                     s.failed += 1;
                     s.last_failure = Some(format!("{short}: not delivered @ {now}"));

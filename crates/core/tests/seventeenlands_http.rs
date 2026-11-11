@@ -8,7 +8,10 @@
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use serde_json::json;
 
@@ -257,4 +260,29 @@ fn consecutive_uploads_reuse_one_connection() {
     let reqs = handle.join().unwrap();
     assert_eq!(reqs[0].request_line, "POST /api/client/add_pack HTTP/1.1");
     assert_eq!(reqs[1].request_line, "POST /api/client/add_pick HTTP/1.1");
+}
+
+#[test]
+fn cancelling_ends_a_rate_limit_backoff() {
+    // One 429, then nothing: without the cancel flag the client would sleep and retry.
+    let (host, handle) = spawn_mock(vec![
+        "HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+    ]);
+    let cancel = Arc::new(AtomicBool::new(false));
+    let mut client = ApiClient::new(host).with_cancel(cancel.clone());
+
+    let setter = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(200));
+        cancel.store(true, Ordering::Relaxed);
+    });
+    let started = Instant::now();
+    let outcome = client.submit("api/client/add_rank", json!({"rank_data": null}), false);
+    setter.join().unwrap();
+
+    assert_eq!(outcome, SubmitOutcome::Cancelled);
+    assert!(
+        started.elapsed() < Duration::from_millis(900),
+        "returned before the 1s backoff ran out"
+    );
+    assert_eq!(handle.join().unwrap().len(), 1);
 }
