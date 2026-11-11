@@ -5558,7 +5558,7 @@ checksum = "03251193000f4bd3b042892be858ee50e8b3719f2b08e5833ac4353724632430"
 
 [[package]]
 name = "recall-core"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
@@ -5574,7 +5574,7 @@ dependencies = [
 
 [[package]]
 name = "recall-desktop"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "chrono",
  "gpui-kit",

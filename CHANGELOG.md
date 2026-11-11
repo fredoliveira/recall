@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-11
+
 ### Added
 
 - Restarts no longer re-upload the log. Recall checkpoints how far it has got
@@ -142,7 +144,8 @@ Initial release. A drop-in, wire-compatible Rust port of the official 17Lands MT
 - Oracle parity tooling (`tools/oracle/`, `examples/oracle_diff.rs`) and an offline `replay`
   example.
 
-[Unreleased]: https://github.com/fredoliveira/recall/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/fredoliveira/recall/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/fredoliveira/recall/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/fredoliveira/recall/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/fredoliveira/recall/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/fredoliveira/recall/compare/v0.1.3...v0.2.0
