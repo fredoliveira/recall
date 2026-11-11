@@ -51,6 +51,13 @@ token = "00000000-0000-4000-8000-000000000000"
 # dir = "/path/to/archive"              # optional; default below
 ```
 
+### Restarts
+
+Recall remembers how far into each log it has got (`state.json`, next to the archive directory
+below), so restarting it does not upload the same events again. To force a full re-upload of a log,
+pass it explicitly - `recall path/to/Player.log` always processes the whole file - or delete
+`state.json`.
+
 ### Keeping your own data: the archive
 
 Add an empty `[services.archive]` section and every parsed event is also written locally,

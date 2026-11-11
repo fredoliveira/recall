@@ -308,7 +308,7 @@ impl<S: Submitter> SeventeenLands<S> {
 }
 
 impl<S: Submitter> Service for SeventeenLands<S> {
-    fn handle(&mut self, event: &GameEvent) {
+    fn handle(&mut self, event: &GameEvent) -> bool {
         // WIRE: envelope head is `token, client_version` then the context fields.
         let mut payload = Map::new();
         payload.insert("token".into(), Value::String(self.token.clone()));
@@ -320,8 +320,9 @@ impl<S: Submitter> Service for SeventeenLands<S> {
             payload.insert(k, v);
         }
         let (endpoint, use_gzip) = route(event);
-        // The outcome is for observers; the client has already logged any failure.
-        self.wire.submit(endpoint, Value::Object(payload), use_gzip);
+        // The client has already logged any failure; anything but an accepted upload
+        // counts as undelivered.
+        self.wire.submit(endpoint, Value::Object(payload), use_gzip) == SubmitOutcome::Accepted
     }
 }
 

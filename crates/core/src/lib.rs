@@ -13,6 +13,7 @@
 //! over this crate; the modules are public so the integration tests in `tests/`
 //! (fixture parity, HTTP) can drive them directly.
 
+pub mod checkpoint;
 pub mod config;
 pub mod events;
 pub mod follower;

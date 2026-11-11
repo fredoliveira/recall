@@ -12,9 +12,12 @@
 
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use clap::{Parser, ValueHint};
 
+use recall_core::checkpoint::{self, Checkpoints};
 use recall_core::config::{self, Config};
 use recall_core::events::Service;
 use recall_core::follower::{self, Follower};
@@ -55,11 +58,13 @@ fn main() {
     let host = cfg.seventeenlands_host();
     log::info!(target: follower::CHATTER, "Services: {}", cfg.service_names().join(", "));
 
+    let checkpoints = Checkpoints::load(checkpoint::scope_for(&host, &token));
     let sink = services::from_config(&cfg, token, ApiClient::new(host));
     let follower = Follower::with_sink(sink);
     match args.log_file {
+        // An explicit file is always parsed in full: no checkpoint read or written.
         Some(path) => parse_once(path, follower),
-        None => follow_arena(follower),
+        None => follow_arena(follower, checkpoints),
     }
 }
 
@@ -135,14 +140,21 @@ fn parse_once<S: Service>(path: PathBuf, mut follower: Follower<S>) {
     log::info!("Exiting");
 }
 
-/// Normal mode: catch up on the previous log once, then follow the current one.
-fn follow_arena<S: Service>(mut follower: Follower<S>) {
+/// Normal mode: catch up on the previous log once, then follow the current one. Both go
+/// through the checkpoints, so events delivered by an earlier run are not sent again.
+fn follow_arena<S: Service>(mut follower: Follower<S>, mut checkpoints: Checkpoints) {
+    let never = Arc::new(AtomicBool::new(false));
     if let Some(prev) = paths::possible_previous_filepaths()
         .iter()
         .find(|f| f.exists())
     {
         log::info!(target: follower::CHATTER, "Parsing the previous log {} once", prev.display());
-        follower.parse_log(&prev.to_string_lossy(), false);
+        follower.parse_log_resumable(
+            &prev.to_string_lossy(),
+            false,
+            &never,
+            Some(&mut checkpoints),
+        );
     }
 
     let current: Vec<PathBuf> = paths::possible_current_filepaths()
@@ -156,7 +168,12 @@ fn follow_arena<S: Service>(mut follower: Follower<S>) {
     }
     for filename in &current {
         log::info!(target: follower::CHATTER, "Following along {}", filename.display());
-        follower.parse_log(&filename.to_string_lossy(), true);
+        follower.parse_log_resumable(
+            &filename.to_string_lossy(),
+            true,
+            &never,
+            Some(&mut checkpoints),
+        );
     }
 
     log::info!("Exiting");

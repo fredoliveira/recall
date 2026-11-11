@@ -20,7 +20,7 @@ impl<S: Service> Follower<S> {
             raw: obj.clone(),
             ctx: self.context(),
         };
-        self.sink.handle(&event);
+        self.emit(&event);
         log::info!(target: CHATTER, "Joined event successfully");
     }
 
@@ -61,7 +61,7 @@ impl<S: Service> Follower<S> {
             raw: obj.clone(),
             ctx: self.context(),
         });
-        self.sink.handle(&event);
+        self.emit(&event);
     }
 
     pub(super) fn handle_ongoing_events(&mut self, obj: &Value) {
@@ -70,7 +70,7 @@ impl<S: Service> Follower<S> {
             courses: obj.get("Courses").cloned(),
             ctx: self.context(),
         };
-        self.sink.handle(&event);
+        self.emit(&event);
     }
 
     pub(super) fn handle_claim_prize(&mut self, obj: &Value) {
@@ -79,7 +79,7 @@ impl<S: Service> Follower<S> {
             event_name: obj.get("EventName").cloned(),
             ctx: self.context(),
         };
-        self.sink.handle(&event);
+        self.emit(&event);
     }
 
     pub(super) fn handle_event_course(&mut self, obj: &Value) {
@@ -92,6 +92,6 @@ impl<S: Service> Follower<S> {
             raw: obj.clone(),
             ctx: self.context(),
         };
-        self.sink.handle(&event);
+        self.emit(&event);
     }
 }

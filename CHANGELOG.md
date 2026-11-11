@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- Restarts no longer re-upload the log. Recall checkpoints how far it has got
+  (`<data_dir>/recall/state.json`) and on the next start rebuilds its state from the already
+  processed part without sending anything, then carries on live. Applies to the CLI's follow mode
+  (including the `Player-prev.log` catch-up) and the desktop app; `recall <LOG>` still processes the
+  whole file. An upload 17Lands did not accept is offered again on the next start. The archive no
+  longer gains duplicate lines on restart.
+
 ### Changed
 
 - Uploads reuse one HTTP connection instead of opening a new one (TCP + TLS handshake) per event,
@@ -17,6 +26,8 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- Desktop: stopping and restarting the follower (saving a token, changing the log path) no longer
+  drops the parser's state, which left events without a player id and lost a game in progress.
 - The declared minimum Rust version is now 1.88, which the code has needed since it adopted
   let-chains (it said 1.85).
 

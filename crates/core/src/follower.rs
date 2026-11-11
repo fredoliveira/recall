@@ -14,15 +14,17 @@
 //! emulated at the read sites (`.get(...).unwrap_or_default()` etc.).
 
 use std::collections::HashMap;
-use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader};
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
 
 use regex::Regex;
 use serde_json::{Map, Value, json};
 
+use crate::checkpoint::Checkpoints;
 use crate::events::{
     Context, DeckEntry, DeckSubmission, DraftPack, DraftPick, DraftSource, GameData, GameEvent,
     GameHistory, GameResult, MatchResult, Service,
@@ -288,6 +290,17 @@ pub struct Follower<S: Service> {
     // Buffering
     buffer: Vec<String>,
     last_blob: String,
+
+    // Checkpointing (see `crate::checkpoint` and `tail`); none of this is parse state, so
+    // `reinitialize` leaves it alone and the tail loop manages it per pass.
+    /// Replaying already-delivered log: events are built (state advances) but not emitted.
+    muted: bool,
+    /// An event was delivered since the last checkpoint was saved.
+    delivered_since_checkpoint: bool,
+    /// A service did not take an event: the checkpoint stays where it is for this pass.
+    checkpoint_blocked: bool,
+    /// The last `DETAILED LOGS:` line said they are disabled.
+    detailed_logs_disabled: bool,
 }
 
 impl Follower<SeventeenLands<ApiClient>> {
@@ -317,6 +330,10 @@ impl<S: Service> Follower<S> {
             pending_game: None,
             buffer: Vec::new(),
             last_blob: String::new(),
+            muted: false,
+            delivered_since_checkpoint: false,
+            checkpoint_blocked: false,
+            detailed_logs_disabled: false,
         };
         f.reinitialize();
         f
@@ -338,6 +355,20 @@ impl<S: Service> Follower<S> {
         self.pending_game = None;
         self.last_blob = String::new();
         self.clear_match_data(false);
+    }
+
+    /// Hand an event to the services - the one place the follower emits. While `muted`
+    /// (replaying log that was delivered before a restart) the event is dropped: the
+    /// handler has already advanced the state, which is all the replay is for.
+    fn emit(&mut self, event: &GameEvent) {
+        if self.muted {
+            return;
+        }
+        if self.sink.handle(event) {
+            self.delivered_since_checkpoint = true;
+        } else {
+            self.checkpoint_blocked = true;
+        }
     }
 
     /// The parse-time [`Context`] for an event emitted right now.
