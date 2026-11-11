@@ -70,10 +70,7 @@ cask)
 #
 #     brew install --cask fredoliveira/tap/recall-desktop
 #
-# NOTE: the app is currently only ad-hoc signed (not Apple-notarized), so Gatekeeper
-# quarantines it on first launch. Until notarization is set up, open it once via
-# right-click -> Open, or clear the quarantine attribute:
-#     xattr -dr com.apple.quarantine "/Applications/Recall.app"
+# The app is signed with a Developer ID and notarized by Apple (release-desktop.yml).
 cask "recall-desktop" do
   version "${version}"
   sha256 "${sha_dmg}"

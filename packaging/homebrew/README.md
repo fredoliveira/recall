@@ -11,15 +11,31 @@ things, both built and attached to each GitHub release:
 Both tap files are **generated** by [`generate.sh`](generate.sh) here - edit the generator, never
 the tap files directly.
 
-> Note on notarization (CLI): Homebrew downloads via `curl`, which does **not** apply the
-> `com.apple.quarantine` xattr, so Gatekeeper never blocks the brew-installed CLI even though the
-> binary is only ad-hoc signed (not Apple-notarized).
+> Signing: the desktop app is signed with a Developer ID certificate and notarized by Apple in the
+> Release Desktop workflow (the app and the `.dmg` are both stapled), so the cask installs and
+> launches without a Gatekeeper prompt. A tagged release fails rather than ship unsigned.
 >
-> The **cask is different**: `brew install --cask` quarantines the `.app`, so the unsigned desktop
-> app is blocked by Gatekeeper on first launch. Until the app is Apple-notarized, users must open it
-> once via right-click → Open (or run `xattr -dr com.apple.quarantine "/Applications/Recall.app"`).
-> The cask file documents this. Notarization needs an Apple Developer ID signing cert +
-> `xcrun notarytool` in the Release Desktop workflow, after which the cask "just works".
+> The CLI binary is only ad-hoc signed. That is fine through Homebrew, which downloads via `curl`
+> and so never applies the `com.apple.quarantine` xattr; a tarball downloaded in a browser is
+> quarantined and blocked until the attribute is cleared.
+
+### Signing secrets
+
+The Release Desktop workflow needs these repo secrets:
+
+| Secret                       | Value                                                             |
+| ---------------------------- | ----------------------------------------------------------------- |
+| `APPLE_CERTIFICATE`          | the Developer ID Application certificate + key (`.p12`), base64   |
+| `APPLE_CERTIFICATE_PASSWORD` | the `.p12` password                                               |
+| `APPLE_SIGNING_IDENTITY`     | the identity name, `Developer ID Application: <name> (<team id>)` |
+| `APPLE_API_ISSUER`           | App Store Connect API issuer ID                                   |
+| `APPLE_API_KEY`              | App Store Connect API key ID                                      |
+| `APPLE_API_KEY_P8`           | contents of the API key's `.p8` file                              |
+
+The certificate expires after five years and the workflow starts failing when it does; re-export and
+replace the first two. To test signing without publishing, run the workflow manually
+(`gh workflow run release-desktop.yml --ref <branch>`): it builds and notarizes the `.dmg` as an
+artifact only.
 
 Users install:
 
