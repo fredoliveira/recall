@@ -14,7 +14,7 @@ use serde_json::Value;
 
 use recall_core::services::seventeenlands::{ApiClient, SubmitOutcome, Submitter};
 
-/// Snapshot of upload activity, shared with the UI/tray.
+/// Snapshot of upload activity, shared with the UI.
 #[derive(Default, Clone, Serialize)]
 pub struct UploadStatus {
     /// Uploads 17Lands accepted.

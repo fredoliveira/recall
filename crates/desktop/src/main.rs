@@ -9,13 +9,9 @@ mod state;
 
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, WindowEvent, Wry};
+use tauri::{AppHandle, Emitter, Manager, WindowEvent};
 
 use state::AppState;
-
-/// Handle to the disabled tray-menu status line ("Working" / "Stopped" / "Missing token"),
-/// kept in managed state so it can be re-rendered as the follower's state changes.
-struct TrayStatusItem(MenuItem<Wry>);
 
 fn main() {
     // Install the log->webview bridge before anything logs.
@@ -87,7 +83,7 @@ fn main() {
 }
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    // Disabled header: app name + version, and a live status line.
+    // Disabled header: app name + version.
     let title = MenuItem::with_id(
         app,
         "title",
@@ -95,22 +91,16 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         false,
         None::<&str>,
     )?;
-    let status = MenuItem::with_id(app, "status", tray_status_text(app), false, None::<&str>)?;
     let header_sep = PredefinedMenuItem::separator(app)?;
 
-    let show = MenuItem::with_id(app, "show", "Show Log Window", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
+    // One window holds both the log and the settings, so one item opens it.
+    let show = MenuItem::with_id(app, "show", "Open Recall…", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Recall", true, None::<&str>)?;
-    let menu = Menu::with_items(
-        app,
-        &[&title, &status, &header_sep, &show, &settings, &sep, &quit],
-    )?;
-
-    app.manage(TrayStatusItem(status));
+    let menu = Menu::with_items(app, &[&title, &header_sep, &show, &sep, &quit])?;
 
     // Standard macOS menu-bar behavior: a left-click opens the menu. The menu's
-    // "Show Log Window" item keeps the window reachable.
+    // "Open Recall…" item keeps the window reachable.
     let mut builder = TrayIconBuilder::with_id("main")
         .tooltip(format!("Recall v{}", env!("CARGO_PKG_VERSION")))
         .menu(&menu)
@@ -128,10 +118,6 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 fn handle_menu(app: &AppHandle, event: MenuEvent) {
     match event.id().as_ref() {
         "show" => show_window(app),
-        "settings" => {
-            show_window(app);
-            let _ = app.emit("show-settings", ());
-        }
         "quit" => {
             app.state::<AppState>().stop();
             app.exit(0);
@@ -147,28 +133,9 @@ fn show_window(app: &AppHandle) {
     }
 }
 
-fn tray_status_text(app: &AppHandle) -> &'static str {
-    let state = app.state::<AppState>();
-    if state.config().seventeenlands_token().is_none() {
-        "Missing token"
-    } else if state.is_following() {
-        "Working"
-    } else {
-        "Stopped"
-    }
-}
-
-/// The displayed status changed: re-render the tray status line and tell the webview to
-/// refresh. Callable from any thread, and never blocks: the work is queued onto the main
-/// thread rather than awaited, because Tauri's menu setters wait for the main thread and the
-/// follower thread calls this while the main thread may be joining it (`AppState::stop`).
+/// The displayed status changed: tell the webview to refresh. Callable from any thread, and
+/// never blocks (the follower thread calls this while the main thread may be joining it in
+/// `AppState::stop`).
 pub(crate) fn status_changed(app: &AppHandle) {
-    let handle = app.clone();
-    let _ = app.run_on_main_thread(move || {
-        let text = tray_status_text(&handle);
-        if let Some(item) = handle.try_state::<TrayStatusItem>() {
-            let _ = item.0.set_text(text);
-        }
-        let _ = handle.emit("status-changed", ());
-    });
+    let _ = app.emit("status-changed", ());
 }

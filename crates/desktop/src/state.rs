@@ -2,9 +2,9 @@
 //! cached config and the shared upload status. Managed by Tauri (`app.manage`) so commands
 //! and the tray can reach it.
 //!
-//! Nothing polls: every change to what the tray and window display (follower start, stop or
-//! exit, a saved token, an upload outcome) calls [`AppState::notify`], which re-renders the
-//! tray line and emits `status-changed` to the webview.
+//! Nothing polls: every change to what the window displays (follower start, stop or
+//! exit, a saved token, an upload outcome) calls [`AppState::notify`], which emits
+//! `status-changed` to the webview.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -37,11 +37,14 @@ pub struct AppState {
     app: OnceLock<AppHandle>,
 }
 
-/// Status snapshot serialized to the UI and used to render tray text.
+/// Status snapshot serialized to the UI.
 #[derive(Serialize)]
 pub struct StatusDto {
     pub following: bool,
     pub token_present: bool,
+    /// Last four characters of the saved token, so the UI can show which one is in use
+    /// without ever holding the whole secret.
+    pub token_hint: Option<String>,
     pub log_path: Option<String>,
     pub host: String,
     pub upload_count: u64,
@@ -72,12 +75,12 @@ impl AppState {
         }
     }
 
-    /// Wire in the live `AppHandle` so status changes can reach the tray and the webview.
+    /// Wire in the live `AppHandle` so status changes can reach the webview.
     pub fn attach(&self, app: AppHandle) {
         let _ = self.app.set(app);
     }
 
-    /// Tell the tray and the webview that the displayed status changed.
+    /// Tell the webview that the displayed status changed.
     pub fn notify(&self) {
         if let Some(app) = self.app.get() {
             crate::status_changed(app);
@@ -191,9 +194,11 @@ impl AppState {
     pub fn status(&self) -> StatusDto {
         let u = self.upload.lock().unwrap().clone();
         let cfg = self.config();
+        let token = cfg.seventeenlands_token();
         StatusDto {
             following: self.is_following(),
-            token_present: cfg.seventeenlands_token().is_some(),
+            token_present: token.is_some(),
+            token_hint: token.map(|t| t[t.len().saturating_sub(4)..].to_string()),
             log_path: self
                 .resolve_log_path()
                 .map(|p| p.to_string_lossy().to_string()),

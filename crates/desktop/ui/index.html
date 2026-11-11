@@ -8,56 +8,127 @@
   </head>
   <body>
     <header>
-      <div class="brand">
-        <span class="dot" id="status-dot"></span>
-        <strong id="brand-name">Recall</strong>
+      <div class="pill" id="status-pill" data-state="off">
+        <span class="dot"></span>
+        <span id="status-text">Starting…</span>
       </div>
-      <nav>
+      <nav class="segmented">
         <button class="tab active" data-view="log">Log</button>
         <button class="tab" data-view="settings">Settings</button>
       </nav>
+      <div class="header-stat" id="status-uploads"></div>
     </header>
-
-    <section id="status-bar">
-      <span id="status-text">Starting…</span>
-      <span id="status-uploads" class="muted"></span>
-    </section>
 
     <!-- Log view -->
     <main id="view-log" class="view">
       <div id="log" class="log"></div>
       <div class="logbar">
-        <label><input type="checkbox" id="show-chatter" /> Show background chatter</label>
-        <button id="clear-log">Clear</button>
+        <span id="last-upload" class="last-upload"></span>
+        <label class="check"><input type="checkbox" id="show-chatter" /> Background chatter</label>
+        <button class="btn" id="clear-log">Clear</button>
       </div>
     </main>
 
     <!-- Settings view -->
     <main id="view-settings" class="view hidden">
-      <div class="field">
-        <label for="token">17Lands token</label>
-        <p class="muted">
-          Find it on your 17Lands account page. Stored locally in your config dir.
-        </p>
-        <div class="row">
-          <input type="text" id="token" placeholder="00000000-0000-4000-8000-000000000000" />
-          <button id="save-token">Save</button>
+      <div class="settings">
+        <div class="hero" id="hero" data-state="off">
+          <div class="beacon"><span></span></div>
+          <div class="hero-text">
+            <h1 id="hero-title">Starting…</h1>
+            <p id="hero-sub"></p>
+          </div>
+          <div class="stats">
+            <div class="stat">
+              <strong id="stat-uploads">0</strong>
+              <span>uploads</span>
+            </div>
+            <div class="stat warn hidden" id="stat-failed-box">
+              <strong id="stat-failed">0</strong>
+              <span>failed</span>
+            </div>
+          </div>
         </div>
-        <p id="token-msg" class="msg"></p>
-      </div>
 
-      <div class="field">
-        <label for="log-path">Log file</label>
-        <p class="muted">Auto-detected. Override only if your Player.log lives elsewhere.</p>
-        <div class="row">
-          <input type="text" id="log-path" placeholder="(auto-detected)" />
-          <button id="save-path">Set</button>
-        </div>
-        <p id="path-msg" class="msg"></p>
-      </div>
+        <section class="group">
+          <h2>17Lands</h2>
+          <div class="card">
+            <div class="row">
+              <div class="row-main">
+                <div class="row-label">Token</div>
+                <div class="row-desc" id="token-desc"></div>
+              </div>
+              <button class="btn" id="token-edit">Replace</button>
+            </div>
+            <div class="editor hidden" id="token-editor">
+              <div class="editor-line">
+                <input
+                  type="text"
+                  id="token"
+                  placeholder="00000000-0000-4000-8000-000000000000"
+                  spellcheck="false"
+                  autocomplete="off"
+                />
+                <button class="btn" id="token-cancel">Cancel</button>
+                <button class="btn primary" id="save-token">Save</button>
+              </div>
+              <p class="hint">
+                Find it on your 17Lands account page. It is stored locally in Recall's config file.
+              </p>
+              <p id="token-msg" class="msg"></p>
+            </div>
+            <div class="row">
+              <div class="row-main">
+                <div class="row-label">Uploading to</div>
+              </div>
+              <code id="host" class="value"></code>
+            </div>
+          </div>
+        </section>
 
-      <div class="field">
-        <span class="muted">Uploading to: <code id="host"></code></span>
+        <section class="group">
+          <h2>Arena log</h2>
+          <div class="card">
+            <div class="row">
+              <div class="row-main">
+                <div class="row-label">Log file</div>
+                <div class="row-desc mono" id="path-desc"></div>
+              </div>
+              <button class="btn" id="path-edit">Change</button>
+            </div>
+            <div class="editor hidden" id="path-editor">
+              <div class="editor-line">
+                <input
+                  type="text"
+                  id="log-path"
+                  placeholder="/path/to/Player.log"
+                  spellcheck="false"
+                  autocomplete="off"
+                />
+                <button class="btn" id="path-cancel">Cancel</button>
+                <button class="btn primary" id="save-path">Set</button>
+              </div>
+              <p class="hint">
+                Recall finds Player.log on its own. Change this only if yours lives elsewhere.
+              </p>
+              <p id="path-msg" class="msg"></p>
+            </div>
+          </div>
+        </section>
+
+        <section class="group">
+          <h2>About</h2>
+          <div class="card">
+            <div class="row">
+              <div class="row-main"><div class="row-label">Services</div></div>
+              <div class="chips" id="services"></div>
+            </div>
+            <div class="row">
+              <div class="row-main"><div class="row-label">Version</div></div>
+              <span class="value" id="version"></span>
+            </div>
+          </div>
+        </section>
       </div>
     </main>
 

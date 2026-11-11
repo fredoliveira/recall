@@ -19,8 +19,12 @@ All notable changes to this project are documented here. The format is based on
 
 - Uploads reuse one HTTP connection instead of opening a new one (TCP + TLS handshake) per event,
   and a stalled connection now times out and is retried instead of hanging the follower.
-- The desktop app no longer polls: the tray line and the window status update when something
-  changes, instead of re-reading `config.toml` every 2 seconds.
+- The desktop app no longer polls: the window status updates when something changes, instead of
+  re-reading `config.toml` every 2 seconds.
+- Desktop app: redesigned window (follows the system light/dark theme) with a new Settings screen
+  that shows what is being followed, the saved token's last four characters and the enabled
+  services. The menu-bar menu is down to one "Open Recall…" item; the status line and the separate
+  "Settings…" item are gone.
 - Release binaries are built with LTO and stripped (the CLI is about a third smaller).
 - The desktop app is signed with a Developer ID and notarized by Apple, so it opens without the
   Gatekeeper workaround.
