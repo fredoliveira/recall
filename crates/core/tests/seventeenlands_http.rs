@@ -228,3 +228,33 @@ fn retries_load_balancer_firewall_403_until_accepted() {
         "firewall 403 must be retried"
     );
 }
+
+#[test]
+fn consecutive_uploads_reuse_one_connection() {
+    // A server that accepts exactly one connection and answers two requests on it: the
+    // second submit only succeeds if the client kept the connection alive.
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let host = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+    let handle = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        drop(listener);
+        (0..2)
+            .map(|_| {
+                let req = read_request(&mut stream);
+                stream.write_all(RESP_200.as_bytes()).unwrap();
+                stream.flush().unwrap();
+                req
+            })
+            .collect::<Vec<_>>()
+    });
+
+    let mut client = ApiClient::new(host);
+    for endpoint in ["api/client/add_pack", "api/client/add_pick"] {
+        let outcome = client.submit(endpoint, json!({"token": "abc"}), false);
+        assert_eq!(outcome, SubmitOutcome::Accepted);
+    }
+
+    let reqs = handle.join().unwrap();
+    assert_eq!(reqs[0].request_line, "POST /api/client/add_pack HTTP/1.1");
+    assert_eq!(reqs[1].request_line, "POST /api/client/add_pick HTTP/1.1");
+}
