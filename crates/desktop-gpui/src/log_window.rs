@@ -1,4 +1,4 @@
-//! The main window: what Recall is doing (one status line) and the log of what it did.
+//! The main window: the log of what Recall did, and one status line under it.
 
 use std::rc::Rc;
 
@@ -90,16 +90,9 @@ impl LogView {
         self.rows = Rc::new(rows);
         cx.notify();
     }
-
-    fn clear(&mut self, cx: &mut Context<Self>) {
-        self.feed.update(cx, |feed, cx| {
-            feed.lines.clear();
-            cx.notify();
-        });
-    }
 }
 
-/// What the status line says, and the colour of its dot.
+/// What the status line reports.
 enum Health {
     Following,
     Stopped,
@@ -162,31 +155,6 @@ impl Render for LogView {
                     .text_color(muted)
                     .child("Recall"),
             );
-
-        let (dot, headline): (Hsla, SharedString) = match health {
-            Health::Following => {
-                (success, format!("Following {}", file_name(status.log_path.as_deref().unwrap_or("Player.log"))).into())
-            }
-            Health::Stopped if status.log_path.is_none() => (muted, "Player.log not found".into()),
-            Health::Stopped => (muted, "Not following".into()),
-            Health::NoToken => (danger, "No 17Lands token".into()),
-        };
-        let tally: Option<(SharedString, Hsla)> = if status.upload_failed > 0 {
-            Some((format!("{} uploaded · {} failed", status.upload_count, status.upload_failed).into(), warning))
-        } else if status.upload_count > 0 {
-            Some((plural(status.upload_count, "upload").into(), muted))
-        } else {
-            None
-        };
-        let status_line = h_flex()
-            .w_full()
-            .px(px(style::MARGIN))
-            .py(px(style::STATUS_PADDING_Y))
-            .gap(px(style::STATUS_GAP))
-            .text_size(px(style::TEXT))
-            .child(div().size(px(style::STATUS_DOT)).rounded_full().bg(dot))
-            .child(div().flex_1().font_medium().child(headline))
-            .when_some(tally, |this, (text, color)| this.child(div().text_color(color).child(text)));
 
         let needs_token = matches!(health, Health::NoToken).then(|| {
             h_flex()
@@ -251,10 +219,27 @@ impl Render for LogView {
             .into_any_element()
         };
 
-        let last: Option<(SharedString, Hsla)> = if status.upload_failed > 0 {
-            Some((format!("Last failure: {}", status.last_failure.as_deref().unwrap_or("unknown")).into(), warning))
-        } else if let (Some(endpoint), Some(time)) = (&status.last_endpoint, &status.last_time) {
-            Some((format!("Last upload: {} at {time}", file_name(endpoint)).into(), muted))
+        // The status: how Recall is doing on the left, how much it has uploaded on the right.
+        let (dot, text, text_color): (Hsla, SharedString, Hsla) = match health {
+            Health::NoToken => (danger, "No 17Lands token".into(), fg),
+            Health::Stopped if status.log_path.is_none() => (muted, "Player.log not found".into(), fg),
+            Health::Stopped => (muted, "Not following".into(), fg),
+            Health::Following if status.upload_failed > 0 => (
+                warning,
+                format!("Last failure: {}", status.last_failure.as_deref().unwrap_or("unknown")).into(),
+                warning,
+            ),
+            Health::Following => match (&status.last_endpoint, &status.last_time) {
+                (Some(endpoint), Some(time)) => {
+                    (success, format!("Last upload: {} at {time}", file_name(endpoint)).into(), muted)
+                }
+                _ => (success, "Nothing uploaded yet".into(), muted),
+            },
+        };
+        let tally: Option<(SharedString, Hsla)> = if status.upload_failed > 0 {
+            Some((format!("{} uploaded · {} failed", status.upload_count, status.upload_failed).into(), warning))
+        } else if status.upload_count > 0 {
+            Some((plural(status.upload_count, "upload").into(), muted))
         } else {
             None
         };
@@ -262,33 +247,14 @@ impl Render for LogView {
             .w_full()
             .px(px(style::MARGIN))
             .py(px(style::FOOTER_PADDING_Y))
-            .gap(px(style::FOOTER_GAP))
+            .gap(px(style::STATUS_GAP))
             .border_t_1()
             .border_color(border)
             .text_size(px(style::SMALL_TEXT))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .when_some(last, |this, (text, color)| this.text_color(color).child(text)),
-            )
-            .child(
-                Button::new("clear")
-                    .small()
-                    .label("Clear")
-                    .disabled(self.rows.is_empty())
-                    .on_click(cx.listener(|this, _, _, cx| this.clear(cx))),
-            );
+            .child(div().flex_none().size(px(style::STATUS_DOT)).rounded_full().bg(dot))
+            .child(div().flex_1().min_w_0().truncate().text_color(text_color).child(text))
+            .when_some(tally, |this, (text, color)| this.child(div().flex_none().text_color(color).child(text)));
 
-        v_flex()
-            .size_full()
-            .bg(bg)
-            .text_color(fg)
-            .child(title_bar)
-            .child(status_line)
-            .children(needs_token)
-            .child(log)
-            .child(footer)
+        v_flex().size_full().bg(bg).text_color(fg).child(title_bar).children(needs_token).child(log).child(footer)
     }
 }

@@ -18,34 +18,30 @@ pub const SMALL_TEXT: f32 = 11.;
 /// "Recall" in the title bar.
 pub const TITLE_TEXT: f32 = 14.;
 /// The log itself, in the monospaced font.
-pub const LOG_TEXT: f32 = 11.;
+pub const LOG_TEXT: f32 = 10.;
 
 // ── Title bar ────────────────────────────────────────────────────────────────
 
 /// Space between the settings button and the window's right edge.
 pub const TITLE_BAR_PADDING_RIGHT: f32 = 8.;
 
-// ── Status line ──────────────────────────────────────────────────────────────
-
-pub const STATUS_PADDING_Y: f32 = 8.;
-/// The coloured dot, and the space between it and the text.
-pub const STATUS_DOT: f32 = 8.;
-pub const STATUS_GAP: f32 = 8.;
-
 // ── Log ──────────────────────────────────────────────────────────────────────
 
 /// Every line is one row of this height (the list only draws the rows on screen).
-pub const LOG_ROW_HEIGHT: f32 = 18.;
+pub const LOG_ROW_HEIGHT: f32 = 16.;
 /// Between the time and the message.
 pub const LOG_GAP: f32 = 10.;
 pub const LOG_PADDING_Y: f32 = 6.;
 /// Space above the empty-state line.
 pub const EMPTY_TOP: f32 = 120.;
 
-// ── Footer ───────────────────────────────────────────────────────────────────
+// ── Status line ──────────────────────────────────────────────────────────────
+// Under the log.
 
 pub const FOOTER_PADDING_Y: f32 = 8.;
-pub const FOOTER_GAP: f32 = 12.;
+/// The coloured dot, and the space between it and the text.
+pub const STATUS_DOT: f32 = 7.;
+pub const STATUS_GAP: f32 = 8.;
 
 // ── Notice ───────────────────────────────────────────────────────────────────
 // The card that asks for a token.
