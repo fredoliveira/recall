@@ -50,6 +50,7 @@ universal build needs `rustup target add x86_64-apple-darwin` on the pinned tool
 
 ## Not done yet
 
-- Releasing: the release workflow still ships the Tauri app, and nothing here is notarized yet.
+- Releasing: the release workflow builds and notarizes this app, but has not had a run yet.
+- Replacing `crates/desktop` (the Tauri app), which CI and `just lint` still build.
 - UI tests (GPUI has a headless harness).
 - Selecting and copying log text.

@@ -1,6 +1,6 @@
 # Builds, signs and notarizes the macOS universal desktop .dmg for a `v*` tag and attaches it to the same
 # GitHub release that release.yml publishes the CLI tarballs to. Kept as a separate
-# workflow so a Tauri/bundling failure never blocks the CLI release, and so the .dmg
+# workflow so a bundling failure never blocks the CLI release, and so the .dmg
 # can be rebuilt on its own via workflow_dispatch.
 #
 # Both workflows use softprops/action-gh-release, which creates the tag's release if it
@@ -24,21 +24,23 @@ jobs:
       - uses: actions/checkout@v4
 
       # Tests gate the CLI release (release.yml); this workflow only re-checks the version,
-      # since Tauri stamps tauri.conf.json's into the bundle.
+      # since the bundle is stamped with the desktop crate's own.
       - name: Check the tag matches the manifest versions
         if: startsWith(github.ref, 'refs/tags/')
         run: sh tools/check_release_version.sh "$GITHUB_REF_NAME"
 
+      # The desktop app is its own workspace with its own pinned toolchain; the bundle script
+      # builds with exactly that one.
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-apple-darwin,aarch64-apple-darwin
+        run: |
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' crates/desktop-gpui/rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal \
+            --target aarch64-apple-darwin --target x86_64-apple-darwin
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
-
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2" --locked
+        with:
+          workspaces: crates/desktop-gpui
 
       # Signing + notarization need six repo secrets (packaging/homebrew/README.md lists them).
       # A tagged release refuses to ship without them; a manual run without them (a fork,
@@ -72,36 +74,68 @@ jobs:
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # With these variables present Tauri's bundler imports the certificate into a
-      # temporary keychain, signs the app (hardened runtime) and the .dmg, submits the app
-      # to Apple's notary service, waits, and staples the ticket. It treats a variable that
-      # is set but empty as set, hence the unset for the unsigned path.
-      - name: Build universal .dmg
-        working-directory: crates/desktop
+      # codesign finds the certificate in a keychain, so put it in a temporary one that only
+      # this job's signing tools may use.
+      - name: Import the signing certificate
+        if: steps.signing.outputs.enabled == 'true'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password="$(openssl rand -hex 24)"
+          umask 077
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/certificate.p12" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -f pkcs12 -k "$keychain" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          rm -f "$RUNNER_TEMP/certificate.p12"
+
+      # Builds both architectures into one binary, assembles Recall.app and signs it (hardened
+      # runtime). Without the secrets the script finds no certificate and signs ad hoc.
+      - name: Build the universal app
+        env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          if [ "${{ steps.signing.outputs.enabled }}" = "true" ]; then
+            export RECALL_SIGN_IDENTITY="$APPLE_SIGNING_IDENTITY"
+          fi
+          crates/desktop-gpui/scripts/bundle.sh --universal
+
+      # The app is notarized and stapled before it goes into the disk image, so the copy a
+      # user drags to Applications carries its own ticket and opens offline.
+      - name: Notarize and staple the app
+        if: steps.signing.outputs.enabled == 'true'
+        env:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
         run: |
-          if [ "${{ steps.signing.outputs.enabled }}" != "true" ]; then
-            unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
-              APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_PATH
+          app=crates/desktop-gpui/dist/Recall.app
+          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/Recall.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/Recall.zip" \
+            --key "$RUNNER_TEMP/AuthKey.p8" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
+            --wait
+          # Fails unless the submission above was accepted.
+          xcrun stapler staple "$app"
+
+      - name: Build the .dmg
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          if [ "${{ steps.signing.outputs.enabled }}" = "true" ]; then
+            export RECALL_SIGN_IDENTITY="$APPLE_SIGNING_IDENTITY"
           fi
-          cargo tauri build --target universal-apple-darwin --bundles dmg -- --locked
-
-      - name: Stage .dmg under a stable name
-        run: |
-          dmg="$(find target/universal-apple-darwin/release/bundle/dmg -name '*.dmg' | head -n1)"
-          test -n "$dmg" || { echo "no .dmg produced"; exit 1; }
+          crates/desktop-gpui/scripts/bundle.sh --dmg-only
           mkdir -p dist
-          cp "$dmg" "dist/Recall-universal.dmg"
+          cp crates/desktop-gpui/dist/Recall-universal.dmg dist/Recall-universal.dmg
 
-      # Tauri notarizes the app inside the .dmg but not the disk image itself. Do that too,
-      # so the download opens cleanly. Stapling changes the file, so this runs before the
-      # upload: the cask's sha256 is taken from the artifact.
+      # The disk image is notarized too, so the download itself opens cleanly. Stapling
+      # changes the file, so this runs before the upload: the cask's sha256 is taken from
+      # the artifact.
       - name: Notarize and staple the .dmg
         if: steps.signing.outputs.enabled == 'true'
         env:
@@ -114,10 +148,8 @@ jobs:
           # Fails unless the submission above was accepted.
           xcrun stapler staple dist/Recall-universal.dmg
 
-      # Tauri only warns when it skips notarization, so prove the result on the file that
-      # ships: Gatekeeper accepts the disk image, and the app inside it (Tauri deletes its
-      # own copy of the .app once the .dmg is built) is validly signed, stapled and allowed
-      # to launch.
+      # Prove the result on the file that ships: Gatekeeper accepts the disk image, and the
+      # app inside it is validly signed, stapled and allowed to launch.
       - name: Verify the .dmg and the app inside it
         if: steps.signing.outputs.enabled == 'true'
         run: |
@@ -134,9 +166,11 @@ jobs:
           xcrun stapler validate "$app"
           spctl --assess --type execute --verbose=4 "$app"
 
-      - name: Remove the API key file
+      - name: Remove the API key and the signing keychain
         if: always()
-        run: rm -f "$RUNNER_TEMP/AuthKey.p8"
+        run: |
+          rm -f "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/certificate.p12"
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

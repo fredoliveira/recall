@@ -5,6 +5,10 @@
 #   scripts/bundle.sh                    this machine's architecture
 #   scripts/bundle.sh --universal        Apple Silicon + Intel in one binary (what ships)
 #   scripts/bundle.sh --universal --dmg  also dist/Recall-universal.dmg
+#   scripts/bundle.sh --dmg-only         wrap the dist/Recall.app already there, untouched
+#
+# --dmg-only is for the release workflow, which notarizes and staples the app between the two
+# steps so the app inside the disk image carries its own ticket.
 #
 # RECALL_SIGN_IDENTITY picks the certificate; without it the first "Developer ID Application"
 # in the keychain is used, and with none at all the app is signed ad hoc (runs here, cannot
@@ -13,11 +17,13 @@ set -eu
 
 universal=false
 dmg=false
+build=true
 for arg in "$@"; do
   case "$arg" in
     --universal) universal=true ;;
     --dmg) dmg=true ;;
-    *) echo "usage: bundle.sh [--universal] [--dmg]" >&2; exit 2 ;;
+    --dmg-only) dmg=true build=false ;;
+    *) echo "usage: bundle.sh [--universal] [--dmg | --dmg-only]" >&2; exit 2 ;;
   esac
 done
 
@@ -29,27 +35,9 @@ bin="recall-gpui"
 toolchain=$(sed -n 's/^channel = "\(.*\)"$/\1/p' "$crate/rust-toolchain.toml")
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$crate/Cargo.toml" | head -n1)
 
-cd "$crate"
-rm -rf "$app"
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-
-if $universal; then
-  for target in aarch64-apple-darwin x86_64-apple-darwin; do
-    echo "Building for ${target}…"
-    cargo "+$toolchain" build --release --locked --target "$target"
-  done
-  lipo -create -output "$app/Contents/MacOS/Recall" \
-    "target/aarch64-apple-darwin/release/$bin" "target/x86_64-apple-darwin/release/$bin"
-else
-  echo "Building…"
-  cargo "+$toolchain" build --release --locked
-  cp "target/release/$bin" "$app/Contents/MacOS/Recall"
-fi
-
-cp "$crate/assets/icon.icns" "$app/Contents/Resources/icon.icns"
-
 # LSUIElement: a menu-bar app, with no Dock icon from the first moment of launch.
-cat > "$app/Contents/Info.plist" <<PLIST
+write_info_plist() {
+  cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -71,18 +59,45 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
+}
 
+cd "$crate"
 identity=${RECALL_SIGN_IDENTITY:-$(security find-identity -v -p codesigning |
   sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -n1)}
-if [ -n "$identity" ]; then
-  echo "Signing as ${identity}…"
-  codesign --force --options runtime --timestamp --sign "$identity" "$app"
+
+if $build; then
+  rm -rf "$app"
+  mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+
+  if $universal; then
+    for target in aarch64-apple-darwin x86_64-apple-darwin; do
+      echo "Building for ${target}…"
+      cargo "+$toolchain" build --release --locked --target "$target"
+    done
+    lipo -create -output "$app/Contents/MacOS/Recall" \
+      "target/aarch64-apple-darwin/release/$bin" "target/x86_64-apple-darwin/release/$bin"
+  else
+    echo "Building…"
+    cargo "+$toolchain" build --release --locked
+    cp "target/release/$bin" "$app/Contents/MacOS/Recall"
+  fi
+
+  cp "$crate/assets/icon.icns" "$app/Contents/Resources/icon.icns"
+
+  write_info_plist
+
+  if [ -n "$identity" ]; then
+    echo "Signing as ${identity}…"
+    codesign --force --options runtime --timestamp --sign "$identity" "$app"
+  else
+    echo "No Developer ID certificate found: signing ad hoc (cannot be notarized)." >&2
+    codesign --force --sign - "$app"
+  fi
+  codesign --verify --strict --verbose=2 "$app"
+  echo "Done: $app ($(du -sh "$app" | cut -f1))"
 else
-  echo "No Developer ID certificate found: signing ad hoc (cannot be notarized)." >&2
-  codesign --force --sign - "$app"
+  test -d "$app" || { echo "no $app to wrap: build it first" >&2; exit 1; }
 fi
-codesign --verify --strict --verbose=2 "$app"
-echo "Done: $app ($(du -sh "$app" | cut -f1))"
 
 if $dmg; then
   out="$dist/Recall-universal.dmg"
