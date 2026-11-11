@@ -35,6 +35,11 @@ desktop-run:
 desktop-dev:
     cd crates/desktop && RECALL_HOST=http://127.0.0.1:8732 cargo tauri dev
 
+# Run the GPUI spike of the desktop app against the local mock server (start it first, as
+# for desktop-dev). Its own workspace and toolchain; see crates/desktop-gpui/README.md.
+desktop-gpui-dev:
+    cd crates/desktop-gpui && RECALL_HOST=http://127.0.0.1:8732 cargo +1.99.1 run
+
 # Build the desktop bundle (.app + .dmg on macOS; needs the Tauri CLI).
 desktop-build:
     cd crates/desktop && cargo tauri build

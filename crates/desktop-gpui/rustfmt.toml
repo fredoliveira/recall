@@ -1,0 +1,3 @@
+# Wide enough for GPUI's builder chains to read as layout.
+max_width = 120
+use_small_heuristics = "Max"
