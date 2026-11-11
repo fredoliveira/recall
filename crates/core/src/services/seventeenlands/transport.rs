@@ -18,6 +18,7 @@
 #![allow(dead_code)]
 
 use std::io::Write;
+use std::time::Duration;
 
 use serde::Serialize;
 use serde_json::Value;
@@ -44,14 +45,32 @@ pub enum SubmitOutcome {
     Failed,
 }
 
+/// How long to wait for the TCP + TLS handshake.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+/// How long a single socket read or write may stall. Per operation, not per request, so a
+/// large `add_game` body on a slow link is fine as long as bytes keep moving.
+const IO_TIMEOUT: Duration = Duration::from_secs(60);
+
 /// The live REST client (port of `api_client.ApiClient`).
 pub struct ApiClient {
     pub host: String,
+    /// One agent for the client's lifetime: its pool keeps the connection to the host
+    /// alive, so consecutive uploads skip the TCP + TLS handshake. It also carries the
+    /// timeouts - a stalled connection surfaces as a transport error (retried) instead of
+    /// hanging the follower. Transport only; payload bytes are unaffected.
+    agent: ureq::Agent,
 }
 
 impl ApiClient {
     pub fn new(host: impl Into<String>) -> Self {
-        Self { host: host.into() }
+        Self {
+            host: host.into(),
+            agent: ureq::AgentBuilder::new()
+                .timeout_connect(CONNECT_TIMEOUT)
+                .timeout_read(IO_TIMEOUT)
+                .timeout_write(IO_TIMEOUT)
+                .build(),
+        }
     }
 }
 
@@ -75,7 +94,7 @@ impl Submitter for ApiClient {
         let mut throttled = 0u32;
         let result = crate::retry::retry_api_call(
             || -> Result<ureq::Response, Box<ureq::Transport>> {
-                let resp = send_post(&url, &body, use_gzip)?;
+                let resp = send_post(&self.agent, &url, &body, use_gzip)?;
                 if is_throttled(&resp) {
                     throttled += 1;
                     // Warn once per submission; the backoff can run for hours.
@@ -100,6 +119,9 @@ impl Submitter for ApiClient {
                     log::info!("{endpoint} accepted after {throttled} rate-limited attempt(s)");
                 }
                 log::debug!("{endpoint} -> {}", resp.status());
+                // Drain the (tiny) body: ureq only returns a connection to the agent's
+                // pool once its response has been read to the end.
+                let _ = std::io::copy(&mut resp.into_reader(), &mut std::io::sink());
                 SubmitOutcome::Accepted
             }
             Ok(resp) => {
@@ -153,11 +175,12 @@ fn body_excerpt(resp: ureq::Response) -> Option<String> {
 /// `Ok(Response)` so the retry layer's `response_validator` sees the status; only genuine
 /// transport failures return `Err` (see the `retry` module's ureq normalization note).
 fn send_post(
+    agent: &ureq::Agent,
     url: &str,
     body: &[u8],
     use_gzip: bool,
 ) -> Result<ureq::Response, Box<ureq::Transport>> {
-    let mut req = ureq::post(url).set("Content-Type", "application/json");
+    let mut req = agent.post(url).set("Content-Type", "application/json");
     if use_gzip {
         req = req.set("Content-Encoding", "gzip");
     }

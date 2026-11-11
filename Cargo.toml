@@ -15,4 +15,12 @@ version = "0.3.1"
 license = "MIT"
 repository = "https://github.com/fredoliveira/recall"
 authors = ["Fred Oliveira <hi@helloform.com>"]
-rust-version = "1.85"
+# Let-chains (edition 2024) need 1.88; CI checks this toolchain.
+rust-version = "1.88"
+
+# Shipped binaries: whole-program optimization and no symbols - smaller and a little faster,
+# at the cost of a slower release build.
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

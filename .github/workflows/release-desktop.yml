@@ -23,6 +23,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Tests gate the CLI release (release.yml); this workflow only re-checks the version,
+      # since Tauri stamps tauri.conf.json's into the bundle.
+      - name: Check the tag matches the manifest versions
+        if: startsWith(github.ref, 'refs/tags/')
+        run: sh tools/check_release_version.sh "$GITHUB_REF_NAME"
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -36,7 +42,7 @@ jobs:
 
       - name: Build universal .dmg
         working-directory: crates/desktop
-        run: cargo tauri build --target universal-apple-darwin --bundles dmg
+        run: cargo tauri build --target universal-apple-darwin --bundles dmg -- --locked
 
       - name: Stage .dmg under a stable name
         run: |
