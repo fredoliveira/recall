@@ -211,7 +211,6 @@ impl<S: Service> Follower<S> {
         // cur_log_time is never None in this port (the reset is commented out in Python).
 
         let full_log = self.buffer.concat();
-        self.current_debug_blob = full_log.clone();
 
         if full_log != self.last_blob {
             self.handle_blob(&full_log);

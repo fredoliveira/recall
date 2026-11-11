@@ -288,7 +288,6 @@ pub struct Follower<S: Service> {
     // Buffering
     buffer: Vec<String>,
     last_blob: String,
-    current_debug_blob: String,
 }
 
 impl Follower<SeventeenLands<ApiClient>> {
@@ -318,7 +317,6 @@ impl<S: Service> Follower<S> {
             pending_game: None,
             buffer: Vec::new(),
             last_blob: String::new(),
-            current_debug_blob: String::new(),
         };
         f.reinitialize();
         f
@@ -339,7 +337,6 @@ impl<S: Service> Follower<S> {
         self.cards_in_hand.clear();
         self.pending_game = None;
         self.last_blob = String::new();
-        self.current_debug_blob = String::new();
         self.clear_match_data(false);
     }
 
