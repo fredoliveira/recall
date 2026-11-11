@@ -92,17 +92,6 @@ jobs:
           fi
           cargo tauri build --target universal-apple-darwin --bundles dmg -- --locked
 
-      # Tauri only warns when notarization is skipped, so prove it here: the signature is
-      # valid, the ticket is stapled, and Gatekeeper would let the app launch.
-      - name: Verify the app is signed and notarized
-        if: steps.signing.outputs.enabled == 'true'
-        run: |
-          app="$(find target/universal-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' | head -n1)"
-          test -n "$app" || { echo "no .app produced"; exit 1; }
-          codesign --verify --deep --strict --verbose=2 "$app"
-          xcrun stapler validate "$app"
-          spctl --assess --type execute --verbose=4 "$app"
-
       - name: Stage .dmg under a stable name
         run: |
           dmg="$(find target/universal-apple-darwin/release/bundle/dmg -name '*.dmg' | head -n1)"
@@ -124,8 +113,26 @@ jobs:
             --wait
           # Fails unless the submission above was accepted.
           xcrun stapler staple dist/Recall-universal.dmg
-          spctl --assess --type open --context context:primary-signature --verbose=4 \
-            dist/Recall-universal.dmg
+
+      # Tauri only warns when it skips notarization, so prove the result on the file that
+      # ships: Gatekeeper accepts the disk image, and the app inside it (Tauri deletes its
+      # own copy of the .app once the .dmg is built) is validly signed, stapled and allowed
+      # to launch.
+      - name: Verify the .dmg and the app inside it
+        if: steps.signing.outputs.enabled == 'true'
+        run: |
+          dmg=dist/Recall-universal.dmg
+          xcrun stapler validate "$dmg"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg"
+
+          mount="$(mktemp -d)"
+          hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount"
+          trap 'hdiutil detach "$mount" -quiet || true' EXIT
+          app="$(find "$mount" -maxdepth 1 -name '*.app' | head -n1)"
+          test -n "$app" || { echo "no .app inside the .dmg"; exit 1; }
+          codesign --verify --deep --strict --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=4 "$app"
 
       - name: Remove the API key file
         if: always()
