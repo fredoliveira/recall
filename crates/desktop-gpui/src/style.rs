@@ -39,8 +39,6 @@ pub const LOG_ROW_HEIGHT: f32 = 18.;
 /// Between the time and the message.
 pub const LOG_GAP: f32 = 10.;
 pub const LOG_PADDING_Y: f32 = 6.;
-/// How dim background chatter is.
-pub const CHATTER_OPACITY: f32 = 0.55;
 /// Space above the empty-state line.
 pub const EMPTY_TOP: f32 = 120.;
 

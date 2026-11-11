@@ -29,8 +29,6 @@ pub struct LogLine {
     pub ts: SharedString,
     pub level: Level,
     pub msg: SharedString,
-    /// Background-sync chatter (`follower::CHATTER`), hidden unless asked for.
-    pub chatter: bool,
 }
 
 #[derive(Default)]
@@ -74,11 +72,16 @@ impl Log for Logger {
             ts: chrono::Local::now().format("%H:%M:%S").to_string().into(),
             level: record.level(),
             msg: record.args().to_string().into(),
-            chatter: target == recall_core::follower::CHATTER,
         };
-        // The terminal gets the same feed when run from one.
+        // The terminal gets everything when run from one.
         eprintln!("{} {:<5} {}", line.ts, line.level, line.msg);
-        let _ = self.0.try_send(Signal::Log(line));
+        // The window gets what a player cares about: no background-sync chatter, and of the
+        // debug lines only the transport's, which is where an accepted upload is reported.
+        let wanted = target != recall_core::follower::CHATTER
+            && (record.level() <= Level::Info || target.ends_with("::transport"));
+        if wanted {
+            let _ = self.0.try_send(Signal::Log(line));
+        }
     }
 
     fn flush(&self) {}

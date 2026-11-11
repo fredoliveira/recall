@@ -3,7 +3,6 @@
 use std::rc::Rc;
 
 use gpui_kit::component::button::*;
-use gpui_kit::component::switch::Switch;
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -45,9 +44,8 @@ pub fn open(cx: &mut App) {
 pub struct LogView {
     feed: Entity<Feed>,
     state: std::sync::Arc<AppState>,
-    /// The lines on screen: the feed's, without background chatter unless it's switched on.
+    /// The lines on screen: a copy of the feed's, shared with the list.
     rows: Rc<Vec<LogLine>>,
-    show_chatter: bool,
     scroll: UniformListScrollHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -72,7 +70,6 @@ impl LogView {
             feed,
             state,
             rows: Rc::new(Vec::new()),
-            show_chatter: false,
             scroll: UniformListScrollHandle::default(),
             _subscriptions: subscriptions,
         };
@@ -86,8 +83,7 @@ impl LogView {
             let handle = &self.scroll.0.borrow().base_handle;
             handle.offset().y <= -handle.max_offset().y + px(style::LOG_ROW_HEIGHT)
         };
-        let rows: Vec<LogLine> =
-            self.feed.read(cx).lines.iter().filter(|line| self.show_chatter || !line.chatter).cloned().collect();
+        let rows: Vec<LogLine> = self.feed.read(cx).lines.iter().cloned().collect();
         if at_bottom && !rows.is_empty() {
             self.scroll.scroll_to_item(rows.len() - 1, ScrollStrategy::Bottom);
         }
@@ -241,7 +237,6 @@ impl Render for LogView {
                             .w_full()
                             .px(px(style::MARGIN))
                             .gap(px(style::LOG_GAP))
-                            .when(line.chatter, |this| this.opacity(style::CHATTER_OPACITY))
                             .child(div().flex_none().text_color(muted).child(line.ts.clone()))
                             .child(div().flex_1().min_w_0().truncate().text_color(color).child(line.msg.clone()))
                     })
@@ -278,12 +273,6 @@ impl Render for LogView {
                     .truncate()
                     .when_some(last, |this, (text, color)| this.text_color(color).child(text)),
             )
-            .child(Switch::new("chatter").small().label("Background chatter").checked(self.show_chatter).on_click(
-                cx.listener(|this, on: &bool, _, cx| {
-                    this.show_chatter = *on;
-                    this.refresh(cx);
-                }),
-            ))
             .child(
                 Button::new("clear")
                     .small()
