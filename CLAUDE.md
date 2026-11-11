@@ -50,6 +50,8 @@ Cargo workspace, three crates under `crates/`:
     - `config.rs` - typed `Config` (`[services.<name>]` sections); `load()` migrates the flat
       top-level token. `resolve_token` (CLI): config only, else print where the token goes and
       exit - no flag, no prompt, no legacy-ini import.
+    - `checkpoint.rs` - how far into each log the services have been fed
+      (`<data_dir>/recall/state.json`); see "Resuming" below.
     - `paths.rs` log discovery · `retry.rs` · `time_parse.rs`.
     - `tests/` parity fixtures (see `tests/fixtures/README.md`), `examples/` `replay`, `golden`,
       `replay_archive`.
@@ -75,13 +77,29 @@ things a service's API wants. Rules when adding or changing one:
   that emits it, the 17Lands adapter (`route` + `body` arm mirroring the upstream handler), and a
   fixture pinning the bytes.
 
+### Resuming
+
+A restart must not re-upload the log, but the follower cannot seek: its state is built from
+everything before the offset. So resuming is a **muted replay** (`tail.rs`, `parse_log_resumable`):
+read from byte 0, run every handler, drop the events (`Follower::emit` is the single emit point)
+until the checkpoint, then go live. Rules:
+
+- Handlers must stay deterministic functions of the log - no wall clock, no I/O - or the replayed
+  state diverges from the first run's. `tests/resume.rs` pins "interrupted + resumed == one full
+  run", byte for byte.
+- The checkpoint only moves past events the primary service accepted (`Service::handle` returns
+  whether the event was delivered), so delivery is at-least-once.
+- A checkpoint matches a file by the bytes just before its offset, not by name (a rotated
+  `Player-prev.log` resumes), and is scoped to host + token.
+- `parse_log` / `recall <LOG>` / the examples never read or write checkpoints.
+
 ### Adding a service
 
 Implement `events::Service` and add it in `services::from_config` behind a `[services.<name>]`
-config section (`config.rs`). Rules: a service only sees `&GameEvent` - never another service's
-credentials; only the 17Lands leg gets blocking retries; anything secondary must never stall or fail
-the loop (no retries; `services::archive::Archive` is the template: append, log once on error, keep
-going).
+config section (`config.rs`). Rules: a secondary returns `true` from `handle` (only the primary may
+hold the checkpoint back); a service only sees `&GameEvent` - never another service's credentials;
+only the 17Lands leg gets blocking retries; anything secondary must never stall or fail the loop (no
+retries; `services::archive::Archive` is the template: append, log once on error, keep going).
 
 ## Verifying
 
@@ -126,5 +144,5 @@ The local reference copy is gone; diff against GitHub directly. When upstream re
 - Naming: the product is Recall; nothing that reaches the 17Lands server is renamed (payloads,
   `CLIENT_VERSION`, endpoints), and "17Lands" stays wherever it means the service.
 - Non-wire seams for the desktop app: `config::Config::{load, save}` and `services::from_config` are
-  shared with the CLI; `Follower::parse_log_cancellable{,_from}` add cancellation and
-  resume-from-offset (`parse_log` delegates to them, byte-identical).
+  shared with the CLI; `Follower::parse_log_cancellable` adds cancellation and `parse_log_resumable`
+  checkpoints (`parse_log` delegates to them, byte-identical).

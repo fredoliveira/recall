@@ -7,13 +7,14 @@
 //! tray line and emits `status-changed` to the webview.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::JoinHandle;
 
 use serde::Serialize;
 use tauri::AppHandle;
 
+use recall_core::checkpoint::{self, Checkpoints};
 use recall_core::config::Config;
 use recall_core::follower::Follower;
 use recall_core::services::seventeenlands::ApiClient;
@@ -28,12 +29,6 @@ pub struct AppState {
     following: Arc<AtomicBool>,
     thread: Mutex<Option<JoinHandle<()>>>,
     log_path: Mutex<Option<PathBuf>>,
-    /// Byte read-position published by the follower thread; lets stop→start resume the tail
-    /// instead of re-reading the whole log. Paired with `offset_path` so a stale offset is
-    /// only reused when the resolved log path is unchanged.
-    read_offset: Arc<AtomicU64>,
-    /// The log path that `read_offset` was recorded against.
-    offset_path: Mutex<Option<PathBuf>>,
     pub upload: Arc<Mutex<UploadStatus>>,
     /// The config as last read from disk. Refreshed on every start (so after a token save)
     /// and when the window gains focus, which picks up a hand-edit of `config.toml`.
@@ -71,8 +66,6 @@ impl AppState {
             following: Arc::new(AtomicBool::new(false)),
             thread: Mutex::new(None),
             log_path: Mutex::new(log_path),
-            read_offset: Arc::new(AtomicU64::new(0)),
-            offset_path: Mutex::new(None),
             upload: Arc::new(Mutex::new(UploadStatus::default())),
             cfg: Mutex::new(Config::load()),
             app: OnceLock::new(),
@@ -142,22 +135,11 @@ impl AppState {
             .ok_or("No Player.log found - set a log path in Settings")?;
         let path_str = path.to_string_lossy().to_string();
 
-        // Resume from the remembered offset only when the resolved path is unchanged since the
-        // last run; a different log (e.g. one picked in Settings) starts from the beginning so
-        // we never seek into an unrelated file.
-        let start_offset = if self.offset_path.lock().unwrap().as_deref() == Some(path.as_path()) {
-            self.read_offset.load(Ordering::Relaxed)
-        } else {
-            0
-        };
-        self.read_offset.store(start_offset, Ordering::Relaxed);
-
         self.cancel.store(false, Ordering::Relaxed);
         let cancel = self.cancel.clone();
         let following = self.following.clone();
         let host = self.host_for(&cfg);
         let upload = self.upload.clone();
-        let read_offset = self.read_offset.clone();
         // Both callbacks run on the follower thread; emitting from there is fine.
         let app = self.app.get().cloned();
         let notify = move || {
@@ -171,24 +153,20 @@ impl AppState {
             .spawn(move || {
                 following.store(true, Ordering::Relaxed);
                 notify();
+                // Loaded per start: a stop→start (or an app relaunch) replays the log up to
+                // the checkpoint with the services muted, then carries on live.
+                let mut checkpoints = Checkpoints::load(checkpoint::scope_for(&host, &token));
                 let wire =
                     ObservingSubmitter::new(ApiClient::new(host), upload, Box::new(notify.clone()));
                 let mut follower = Follower::with_sink(services::from_config(&cfg, token, wire));
-                follower.parse_log_cancellable_from(
-                    &path_str,
-                    true,
-                    &cancel,
-                    start_offset,
-                    Some(&read_offset),
-                );
+                follower.parse_log_resumable(&path_str, true, &cancel, Some(&mut checkpoints));
                 following.store(false, Ordering::Relaxed);
                 notify();
             })
             .map_err(|e| e.to_string())?;
 
         *self.thread.lock().unwrap() = Some(handle);
-        *self.log_path.lock().unwrap() = Some(path.clone());
-        *self.offset_path.lock().unwrap() = Some(path);
+        *self.log_path.lock().unwrap() = Some(path);
         Ok(())
     }
 

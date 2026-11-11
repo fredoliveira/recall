@@ -36,7 +36,7 @@ impl<S: Service> Follower<S> {
             full_screen_name: self.user.full_screen_name.clone(),
             ctx: self.context(),
         };
-        self.sink.handle(&event);
+        self.emit(&event);
     }
 
     pub(super) fn handle_login(&mut self, obj: &Value) {
@@ -61,7 +61,7 @@ impl<S: Service> Follower<S> {
             rank_data: obj.clone(),
             ctx: self.context(),
         };
-        self.sink.handle(&event);
+        self.emit(&event);
     }
 
     pub(super) fn handle_collection(&mut self, obj: &Value) {
@@ -74,7 +74,7 @@ impl<S: Service> Follower<S> {
             card_counts: obj.clone(),
             ctx: self.context(),
         };
-        self.sink.handle(&event);
+        self.emit(&event);
     }
 
     pub(super) fn handle_inventory(&mut self, obj: &Value) {
@@ -83,7 +83,7 @@ impl<S: Service> Follower<S> {
             inventory: obj.clone(),
             ctx: self.context(),
         };
-        self.sink.handle(&event);
+        self.emit(&event);
     }
 
     pub(super) fn handle_player_progress(&mut self, obj: &Value) {
@@ -92,7 +92,7 @@ impl<S: Service> Follower<S> {
             progress: obj.clone(),
             ctx: self.context(),
         };
-        self.sink.handle(&event);
+        self.emit(&event);
     }
 
     pub(super) fn reset_current_user(&mut self) {

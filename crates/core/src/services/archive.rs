@@ -83,7 +83,7 @@ impl Archive {
 }
 
 impl Service for Archive {
-    fn handle(&mut self, event: &GameEvent) {
+    fn handle(&mut self, event: &GameEvent) -> bool {
         let date = event.context().log_time.date();
         let line = Self::line(event);
         match self.append(date, &line) {
@@ -94,6 +94,8 @@ impl Service for Archive {
                 self.warned = true;
             }
         }
+        // A secondary never holds the checkpoint back.
+        true
     }
 }
 

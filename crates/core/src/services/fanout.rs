@@ -6,7 +6,8 @@ use crate::events::{GameEvent, Service};
 
 /// A [`Service`] that forwards each event to every contained service, in the order given.
 /// Put the primary (blocking, retrying) service first and non-blocking secondaries after it;
-/// a secondary must never stall the loop.
+/// a secondary must never stall the loop. Delivery is the primary's alone: a secondary
+/// cannot hold the checkpoint back.
 pub struct Fanout(Vec<Box<dyn Service>>);
 
 impl Fanout {
@@ -16,10 +17,15 @@ impl Fanout {
 }
 
 impl Service for Fanout {
-    fn handle(&mut self, event: &GameEvent) {
-        for service in &mut self.0 {
-            service.handle(event);
+    fn handle(&mut self, event: &GameEvent) -> bool {
+        let mut delivered = true;
+        for (i, service) in self.0.iter_mut().enumerate() {
+            let ok = service.handle(event);
+            if i == 0 {
+                delivered = ok;
+            }
         }
+        delivered
     }
 }
 
@@ -31,11 +37,12 @@ mod tests {
     struct Recorder(Arc<Mutex<Vec<String>>>, &'static str);
 
     impl Service for Recorder {
-        fn handle(&mut self, event: &GameEvent) {
+        fn handle(&mut self, event: &GameEvent) -> bool {
             self.0
                 .lock()
                 .unwrap()
                 .push(format!("{}:{}", self.1, event.name()));
+            self.1 == "a"
         }
     }
 
@@ -46,10 +53,18 @@ mod tests {
             Box::new(Recorder(log.clone(), "a")),
             Box::new(Recorder(log.clone(), "b")),
         ]);
-        fanout.handle(&GameEvent::EventEnded {
+        let event = GameEvent::EventEnded {
             event_name: None,
             ctx: crate::events::Context::test_fixture(),
-        });
+        };
+        // Delivered: the primary ("a") said so, whatever the secondary answered.
+        assert!(fanout.handle(&event));
         assert_eq!(*log.lock().unwrap(), ["a:event_ended", "b:event_ended"]);
+
+        let mut reversed = Fanout::new(vec![
+            Box::new(Recorder(log.clone(), "b")),
+            Box::new(Recorder(log.clone(), "a")),
+        ]);
+        assert!(!reversed.handle(&event));
     }
 }

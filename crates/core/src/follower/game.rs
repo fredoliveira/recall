@@ -569,7 +569,7 @@ impl<S: Service> Follower<S> {
             match_result: self.game.pending_match_result.clone(),
             ctx: self.context(),
         };
-        self.sink.handle(&event);
+        self.emit(&event);
         self.clear_game_data(true);
     }
 }

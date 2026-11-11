@@ -23,7 +23,7 @@ impl<S: Service> Follower<S> {
             raw: obj.clone(),
             ctx: self.context(),
         });
-        self.sink.handle(&event);
+        self.emit(&event);
     }
 
     pub(super) fn handle_bot_draft_pick(&mut self, obj: &Value) {
@@ -43,7 +43,7 @@ impl<S: Service> Follower<S> {
             raw: None,
             ctx: self.context(),
         });
-        self.sink.handle(&event);
+        self.emit(&event);
     }
 
     pub(super) fn handle_human_draft_combined(&mut self, obj: &Value) {
@@ -61,7 +61,7 @@ impl<S: Service> Follower<S> {
             raw: obj.clone(),
             ctx: self.context(),
         });
-        self.sink.handle(&pack);
+        self.emit(&pack);
 
         log::info!("Human draft pick (combined)");
         let pick = GameEvent::DraftPick(DraftPick {
@@ -78,7 +78,7 @@ impl<S: Service> Follower<S> {
             raw: Some(obj.clone()),
             ctx: self.context(),
         });
-        self.sink.handle(&pick);
+        self.emit(&pick);
     }
 
     pub(super) fn handle_human_draft_pack(&mut self, obj: &Value) {
@@ -107,7 +107,7 @@ impl<S: Service> Follower<S> {
             raw: obj.clone(),
             ctx: self.context(),
         });
-        self.sink.handle(&event);
+        self.emit(&event);
     }
 
     pub(super) fn handle_player_draft_pick(&mut self, obj: &Value) {
@@ -126,6 +126,6 @@ impl<S: Service> Follower<S> {
             raw: Some(obj.clone()),
             ctx: self.context(),
         });
-        self.sink.handle(&event);
+        self.emit(&event);
     }
 }

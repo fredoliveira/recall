@@ -553,11 +553,16 @@ impl MatchResult {
 /// [`crate::services::fanout::Fanout`], and test recorders. Implementations translate (or ignore) events as they see fit; they never
 /// receive another service's credentials.
 pub trait Service {
-    fn handle(&mut self, event: &GameEvent);
+    /// Consume one event. Returns whether it was **delivered**: `false` means the
+    /// destination did not take it (rejected, or never reached), which holds the log
+    /// checkpoint before this event so a restart offers it again (see
+    /// [`crate::checkpoint`]). A service whose failures should not cause that - any
+    /// secondary - returns `true`.
+    fn handle(&mut self, event: &GameEvent) -> bool;
 }
 
 impl Service for Box<dyn Service> {
-    fn handle(&mut self, event: &GameEvent) {
+    fn handle(&mut self, event: &GameEvent) -> bool {
         (**self).handle(event)
     }
 }

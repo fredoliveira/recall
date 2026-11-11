@@ -10,104 +10,130 @@ use super::*;
 impl<S: Service> Follower<S> {
     /// Tail (or read once) a log file, dispatching complete entries (port of `parse_log`).
     pub fn parse_log(&mut self, filename: &str, follow: bool) {
-        // The plain entry point never cancels: a flag that is always `false` makes
-        // `parse_log_cancellable` behave exactly like the original loop. Existing callers
-        // and tests are unaffected.
+        // The plain entry point never cancels and keeps no checkpoint: it is the original
+        // loop, for the parity tests and one-shot parses.
         let never = Arc::new(AtomicBool::new(false));
         self.parse_log_cancellable(filename, follow, &never);
     }
 
     /// Like [`parse_log`](Self::parse_log) but honours a cooperative cancellation flag,
-    /// returning within one [`SLEEP_TIME`] tick once `cancel` is set. This is additive
-    /// control flow only: it changes nothing about which payloads are built or sent, so the
-    /// wire contract (and parity tests) are unaffected. Used by the desktop app's start/stop.
+    /// returning within one [`SLEEP_TIME`] tick once `cancel` is set. Control flow only:
+    /// nothing about which payloads are built or sent changes.
     pub fn parse_log_cancellable(
         &mut self,
         filename: &str,
         follow: bool,
         cancel: &Arc<AtomicBool>,
     ) {
-        // Delegate with `start_offset = 0` (read from the beginning) and no position sink:
-        // this reproduces the original loop byte-for-byte for every existing caller (CLI,
-        // parity tests). See [`parse_log_cancellable_from`].
-        self.parse_log_cancellable_from(filename, follow, cancel, 0, None);
+        self.parse_log_resumable(filename, follow, cancel, None);
     }
 
-    /// Like [`parse_log_cancellable`](Self::parse_log_cancellable) but supports *resuming* a
-    /// tail from a remembered byte offset, and continuously reports the current read position.
-    /// This is additive control flow only - it neither builds nor sends a different payload,
-    /// so the wire contract (and parity tests) are unchanged; with `start_offset = 0` and
-    /// `position = None` it is identical to the original loop.
+    /// Like [`parse_log_cancellable`](Self::parse_log_cancellable), and with `checkpoints`
+    /// it also remembers how far the services have been fed, so the next run does not hand
+    /// them the same events again (see [`crate::checkpoint`]).
     ///
-    /// - `start_offset`: on the *very first* file open this seeks to that byte instead of byte
-    ///   0, skipping the from-zero reprocessing for that first pass. Used by the desktop app to
-    ///   avoid re-emitting old lines and re-POSTing already-processed events on stop→start.
-    ///   It applies only to the initial open: the in-loop "start from beginning" heuristics
-    ///   (file shrank, or modified far more recently than the last read) still restart the tail
-    ///   from byte 0 as before, so live-tailing is unaffected.
-    /// - `position`: when `Some`, the current byte read-position is published into this atomic
-    ///   as lines are consumed, so a caller can remember where the tail left off at stop time.
-    pub fn parse_log_cancellable_from(
+    /// Resuming is a **muted replay**, not a seek: when a checkpoint matches the file, the
+    /// pass still reads from byte 0 and runs every handler, so the state is rebuilt exactly
+    /// as the first run built it, but events are dropped instead of emitted until the read
+    /// position reaches the checkpoint. From there on the loop is the ordinary live one.
+    /// Payloads are built by the same code from the same state, so the wire contract is
+    /// untouched; the only difference is which events are sent at all.
+    ///
+    /// The checkpoint moves forward only past events every service took, at the end of
+    /// the line (or end-of-file flush) that emitted them. Delivery is therefore
+    /// at-least-once: an interrupted or failed upload is offered again on the next run.
+    pub fn parse_log_resumable(
         &mut self,
         filename: &str,
         follow: bool,
         cancel: &Arc<AtomicBool>,
-        start_offset: u64,
-        position: Option<&Arc<AtomicU64>>,
+        mut checkpoints: Option<&mut Checkpoints>,
     ) {
-        // The resume offset applies to the initial open only; every subsequent "start from
-        // beginning" pass reads from byte 0 like the original loop.
-        let mut pending_offset = start_offset;
+        let log_path = Path::new(filename);
+        // Set when a replay ran out of file before its checkpoint: the next pass starts
+        // from byte 0, live.
+        let mut skip_resume = false;
 
-        loop {
+        'pass: loop {
             if cancel.load(Ordering::Relaxed) {
                 return;
             }
             self.reinitialize();
+            self.muted = false;
+            self.delivered_since_checkpoint = false;
+            self.checkpoint_blocked = false;
             let mut last_read_time = SystemTime::now();
-            let mut last_file_size: u64 = 0;
-            let resume_offset = std::mem::replace(&mut pending_offset, 0);
+
+            // Looked up on every pass, not just the first: a pass restarted over the same
+            // file resumes too, and a rotated file simply matches no checkpoint.
+            let resume = if std::mem::take(&mut skip_resume) {
+                None
+            } else {
+                checkpoints
+                    .as_deref()
+                    .and_then(|c| c.resume_point(log_path))
+            };
+            // Handlers log as they go; during the replay that would narrate old news.
+            let mut quiet = None;
+            if let Some(r) = resume {
+                log::info!(
+                    target: CHATTER,
+                    "Resuming {filename}: skipping {} bytes already processed",
+                    r.offset
+                );
+                self.muted = true;
+                quiet = Some(Quiet::begin());
+            }
 
             match std::fs::File::open(filename) {
                 Ok(file) => {
                     let mut reader = BufReader::new(file);
-                    // Byte position of the read cursor, mirrored into `position` as we go.
+                    // Byte position of the read cursor.
                     let mut pos: u64 = 0;
-                    if resume_offset > 0 {
-                        match reader.seek(SeekFrom::Start(resume_offset)) {
-                            Ok(p) => {
-                                pos = p;
-                                // Seed the shrink heuristic so a file that is still at least as
-                                // large as our offset is not mistaken for a truncation.
-                                last_file_size = p;
-                            }
-                            Err(e) => {
-                                log::error!("Error seeking log to resume offset: {e}");
-                            }
-                        }
-                    }
-                    if let Some(position) = position {
-                        position.store(pos, Ordering::Relaxed);
-                    }
+                    // Whether `pos` is just past a newline. Arena can be caught mid-write;
+                    // a checkpoint is only ever taken on a whole line, so a replay (which
+                    // sees that line whole) stops at the same place.
+                    let mut at_line_end = true;
+                    let mut raw = Vec::new();
                     loop {
                         if cancel.load(Ordering::Relaxed) {
+                            self.muted = false;
                             return;
                         }
-                        let mut raw = Vec::new();
-                        let read = read_until_newline(&mut reader, &mut raw);
-                        let file_size = std::fs::metadata(filename).map(|m| m.len()).unwrap_or(0);
+                        raw.clear();
 
-                        match read {
+                        match reader.read_until(b'\n', &mut raw) {
+                            Ok(0) if self.muted => {
+                                // The file ended before the checkpoint it matched a moment
+                                // ago: it was replaced under us. Start over without one.
+                                self.muted = false;
+                                drop(quiet.take());
+                                log::info!(
+                                    "Starting from beginning of file as it changed while resuming"
+                                );
+                                skip_resume = true;
+                                continue 'pass;
+                            }
                             Ok(0) => {
                                 // EOF.
                                 self.handle_complete_log_entry();
-                                let last_modified = std::fs::metadata(filename)
+                                self.save_checkpoint(
+                                    checkpoints.as_deref_mut(),
+                                    log_path,
+                                    pos,
+                                    true,
+                                    at_line_end,
+                                );
+
+                                let metadata = std::fs::metadata(filename);
+                                let file_size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
+                                let last_modified = metadata
                                     .and_then(|m| m.modified())
                                     .unwrap_or(SystemTime::UNIX_EPOCH);
 
-                                if file_size < last_file_size {
+                                if file_size < pos {
                                     log::info!(
-                                        "Starting from beginning of file as file is smaller than before (previous = {last_file_size}; current = {file_size})"
+                                        "Starting from beginning of file as file is smaller than before (previous = {pos}; current = {file_size})"
                                     );
                                     break;
                                 } else if last_modified
@@ -128,10 +154,30 @@ impl<S: Service> Follower<S> {
                                 let line = String::from_utf8_lossy(&raw);
                                 self.append_line(&line);
                                 last_read_time = SystemTime::now();
-                                last_file_size = file_size;
                                 pos += n as u64;
-                                if let Some(position) = position {
-                                    position.store(pos, Ordering::Relaxed);
+                                at_line_end = raw.ends_with(b"\n");
+
+                                match resume {
+                                    Some(r) if self.muted => {
+                                        if pos >= r.offset {
+                                            // The first run flushed the entry buffer here
+                                            // (it had hit end of file); do the same before
+                                            // going live.
+                                            if r.flushed && pos == r.offset {
+                                                self.handle_complete_log_entry();
+                                            }
+                                            self.muted = false;
+                                            drop(quiet.take());
+                                            self.replay_finished();
+                                        }
+                                    }
+                                    _ => self.save_checkpoint(
+                                        checkpoints.as_deref_mut(),
+                                        log_path,
+                                        pos,
+                                        false,
+                                        at_line_end,
+                                    ),
                                 }
                             }
                             Err(e) => {
@@ -148,11 +194,42 @@ impl<S: Service> Follower<S> {
                     log::error!("Error opening log: {e}");
                 }
             }
+            // A pass can only end muted through one of the early exits above.
+            self.muted = false;
 
             if !follow {
                 log::info!("Done processing file.");
                 break;
             }
+        }
+    }
+
+    /// Move the checkpoint to `pos` if something was delivered since it was last saved and
+    /// nothing has been refused in this pass. Replaying log that emitted nothing is cheap,
+    /// so the state file is only rewritten when there is an upload to avoid repeating.
+    fn save_checkpoint(
+        &mut self,
+        checkpoints: Option<&mut Checkpoints>,
+        log_path: &Path,
+        pos: u64,
+        flushed: bool,
+        at_line_end: bool,
+    ) {
+        let Some(checkpoints) = checkpoints else {
+            return;
+        };
+        if self.delivered_since_checkpoint && !self.checkpoint_blocked && at_line_end {
+            checkpoints.record(log_path, pos, flushed);
+            self.delivered_since_checkpoint = false;
+        }
+    }
+
+    /// The muted replay reached its checkpoint; logging is back on.
+    fn replay_finished(&mut self) {
+        // The replay swallowed this warning along with everything else, and it is the one
+        // line a user must not miss.
+        if self.detailed_logs_disabled {
+            log::warn!("Detailed logs are disabled in MTGA.");
         }
     }
 
@@ -171,8 +248,10 @@ impl<S: Service> Follower<S> {
     pub(super) fn append_line(&mut self, line: &str) {
         // __check_detailed_logs: keep the warning, drop the GUI dialog.
         if line.starts_with("DETAILED LOGS: DISABLED") {
+            self.detailed_logs_disabled = true;
             log::warn!("Detailed logs are disabled in MTGA.");
         } else if line.starts_with("DETAILED LOGS: ENABLED") {
+            self.detailed_logs_disabled = false;
             log::info!(target: CHATTER, "Detailed logs enabled in MTGA.");
         }
 
@@ -226,12 +305,21 @@ impl<S: Service> Follower<S> {
     }
 }
 
-/// Read one line including its trailing `\n` (mirrors Python `readline` with
-/// `errors="replace"` handled by the lossy decode at the call site). Returns bytes read.
-fn read_until_newline<R: Read>(
-    reader: &mut BufReader<R>,
-    buf: &mut Vec<u8>,
-) -> std::io::Result<usize> {
-    use std::io::BufRead;
-    reader.read_until(b'\n', buf)
+/// Silences the `log` macros for the duration of a muted replay, restoring the previous
+/// level on drop. Global, which is fine here: the replay runs on the one follower thread
+/// and nothing else in the process has anything to say meanwhile.
+struct Quiet(log::LevelFilter);
+
+impl Quiet {
+    fn begin() -> Self {
+        let previous = log::max_level();
+        log::set_max_level(log::LevelFilter::Off);
+        Self(previous)
+    }
+}
+
+impl Drop for Quiet {
+    fn drop(&mut self) {
+        log::set_max_level(self.0);
+    }
 }
