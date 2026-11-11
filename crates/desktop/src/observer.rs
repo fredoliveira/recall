@@ -31,11 +31,21 @@ pub struct UploadStatus {
 pub struct ObservingSubmitter {
     inner: ApiClient,
     status: Arc<Mutex<UploadStatus>>,
+    /// Called after each recorded outcome, so the UI refreshes without polling.
+    on_change: Box<dyn Fn() + Send>,
 }
 
 impl ObservingSubmitter {
-    pub fn new(inner: ApiClient, status: Arc<Mutex<UploadStatus>>) -> Self {
-        Self { inner, status }
+    pub fn new(
+        inner: ApiClient,
+        status: Arc<Mutex<UploadStatus>>,
+        on_change: Box<dyn Fn() + Send>,
+    ) -> Self {
+        Self {
+            inner,
+            status,
+            on_change,
+        }
     }
 }
 
@@ -63,6 +73,8 @@ impl Submitter for ObservingSubmitter {
                 }
             }
         }
+        // After the lock is released: the listener reads the status back.
+        (self.on_change)();
         outcome
     }
 }

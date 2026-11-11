@@ -24,7 +24,10 @@ pub fn save_token(token: String, state: State<AppState>) -> Result<(), String> {
     cfg.set_seventeenlands_token(&valid);
     cfg.save()
         .map_err(|e| format!("Could not save config: {e}"))?;
-    state.restart()
+    let result = state.restart();
+    // Even when the follower could not start, the token is now present.
+    state.notify();
+    result
 }
 
 #[tauri::command]
@@ -45,5 +48,7 @@ pub fn set_log_path(path: String, state: State<AppState>) -> Result<(), String> 
         return Err(format!("No file at {path}"));
     }
     state.set_log_path(Some(pb));
-    state.restart()
+    let result = state.restart();
+    state.notify();
+    result
 }

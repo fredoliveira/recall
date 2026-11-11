@@ -11,7 +11,6 @@ use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, WindowEvent, Wry};
 
-use recall_core::config::Config;
 use state::AppState;
 
 /// Handle to the disabled tray-menu status line ("Working" / "Stopped" / "Missing token"),
@@ -37,6 +36,7 @@ fn main() {
         ])
         .setup(|app| {
             logbridge::attach(app.handle().clone());
+            app.state::<AppState>().attach(app.handle().clone());
 
             // Show the crate version in the window title (e.g. "Recall v0.1.1"). Done at
             // runtime since a static tauri.conf.json title can't interpolate the version.
@@ -52,8 +52,9 @@ fn main() {
 
             // First run: if no token yet, open the window on Settings for onboarding.
             // Otherwise start following immediately.
-            let following_started = Config::load().seventeenlands_token().is_some()
-                && app.state::<AppState>().start().is_ok();
+            let state = app.state::<AppState>();
+            let following_started =
+                state.config().seventeenlands_token().is_some() && state.start().is_ok();
 
             if !following_started {
                 if let Some(w) = app.get_webview_window("main") {
@@ -62,23 +63,24 @@ fn main() {
                 }
                 let _ = app.emit("show-settings", ());
             }
-            update_tray_status(app.handle());
-
-            // Keep the tray status line current (token saved, follower stopped/died, …).
-            // Same 2s cadence as the webview's status poll.
-            let handle = app.handle().clone();
-            std::thread::spawn(move || loop {
-                std::thread::sleep(std::time::Duration::from_secs(2));
-                update_tray_status(&handle);
-            });
+            // From here on the status is pushed, not polled: see `AppState::notify`.
+            status_changed(app.handle());
             Ok(())
         })
-        .on_window_event(|window, event| {
+        .on_window_event(|window, event| match event {
             // Closing the window only hides it; the app keeps living in the menu bar.
-            if let WindowEvent::CloseRequested { api, .. } = event {
+            WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            // The one change no in-process event announces is a hand-edit of config.toml;
+            // pick it up when the user comes back to the window.
+            WindowEvent::Focused(true) => {
+                let state = window.state::<AppState>();
+                state.reload_config();
+                state.notify();
+            }
+            _ => {}
         })
         .run(tauri::generate_context!())
         .expect("error while running Recall desktop app");
@@ -146,20 +148,27 @@ fn show_window(app: &AppHandle) {
 }
 
 fn tray_status_text(app: &AppHandle) -> &'static str {
-    if Config::load().seventeenlands_token().is_none() {
+    let state = app.state::<AppState>();
+    if state.config().seventeenlands_token().is_none() {
         "Missing token"
-    } else if app.state::<AppState>().is_following() {
+    } else if state.is_following() {
         "Working"
     } else {
         "Stopped"
     }
 }
 
-/// Re-render the tray status line. Safe from any thread - Tauri menu setters
-/// dispatch to the main thread internally.
-fn update_tray_status(app: &AppHandle) {
-    let text = tray_status_text(app);
-    if let Some(item) = app.try_state::<TrayStatusItem>() {
-        let _ = item.0.set_text(text);
-    }
+/// The displayed status changed: re-render the tray status line and tell the webview to
+/// refresh. Callable from any thread, and never blocks: the work is queued onto the main
+/// thread rather than awaited, because Tauri's menu setters wait for the main thread and the
+/// follower thread calls this while the main thread may be joining it (`AppState::stop`).
+pub(crate) fn status_changed(app: &AppHandle) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let text = tray_status_text(&handle);
+        if let Some(item) = handle.try_state::<TrayStatusItem>() {
+            let _ = item.0.set_text(text);
+        }
+        let _ = handle.emit("status-changed", ());
+    });
 }

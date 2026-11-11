@@ -119,6 +119,6 @@ listen("show-settings", () => showView("settings"));
 (async function init() {
   const lines = await invoke("recent_logs");
   lines.forEach(appendLine);
+  // No polling: the backend emits `status-changed` whenever the status moves.
   await refreshStatus();
-  setInterval(refreshStatus, 2000);
 })();
