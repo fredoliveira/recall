@@ -31,7 +31,7 @@ crate=$(cd "$(dirname "$0")/.." && pwd)
 dist="$crate/dist"
 app="$dist/Recall.app"
 bundle_id="com.helloform.recall"
-bin="recall-gpui"
+bin="recall-desktop"
 toolchain=$(sed -n 's/^channel = "\(.*\)"$/\1/p' "$crate/rust-toolchain.toml")
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$crate/Cargo.toml" | head -n1)
 

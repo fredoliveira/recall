@@ -74,15 +74,17 @@ per day, dated by the log timestamp, one JSON object per line -
 
 ## Repository layout
 
-This is a Cargo workspace producing two artifacts from a shared core:
+Two artifacts from a shared core. The CLI and core are one Cargo workspace; the desktop app is its
+own (it pins a newer toolchain):
 
 | Crate            | Path             | Artifact                                                                                         |
 | ---------------- | ---------------- | ------------------------------------------------------------------------------------------------ |
 | `recall-core`    | `crates/core`    | shared library: the parser (`follower`), the event model (`events`), the services (`services/…`) |
 | `recall`         | `crates/cli`     | the `recall` CLI                                                                                 |
-| `recall-desktop` | `crates/desktop` | Tauri menu-bar app (see its [README](crates/desktop/README.md))                                  |
+| `recall-desktop` | `crates/desktop` | macOS menu-bar app on GPUI (see its [README](crates/desktop/README.md))                          |
 
-Bare `cargo build`/`test` build the CLI + core; the desktop app builds with `-p recall-desktop`.
+Bare `cargo build`/`test` build the CLI + core; the desktop app builds from `crates/desktop` or with
+the `just desktop-*` recipes.
 
 ## Development
 
@@ -91,9 +93,9 @@ Common tasks live in the [`justfile`](justfile) (`brew install just`):
 | Command              | What it does                                                                          |
 | -------------------- | ------------------------------------------------------------------------------------- |
 | `just run [ARGS]`    | Build and run the CLI against the auto-detected `Player.log`                          |
-| `just desktop-run`   | Build and run the desktop app (release; no Tauri CLI needed)                          |
-| `just desktop-dev`   | Desktop dev loop with hot reload, pointed at a local mock API                         |
-| `just desktop-build` | Build the desktop bundle (`.app` + `.dmg`; needs the Tauri CLI)                       |
+| `just desktop-dev`   | Run the desktop app pointed at a local mock API                                       |
+| `just desktop-run`   | Build and run the desktop app (release; uploads to the live host)                     |
+| `just desktop-build` | Build the signed desktop bundle (`.app` + `.dmg`)                                     |
 | `just test`          | Run the test suite                                                                    |
 | `just lint`          | Pre-commit gate: format check + clippy + tests (mirrors CI)                           |
 | `just replay LOG`    | Replay a log offline, printing endpoint counts without uploading                      |

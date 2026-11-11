@@ -33,14 +33,14 @@ jobs:
       # builds with exactly that one.
       - name: Install Rust toolchain
         run: |
-          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' crates/desktop-gpui/rust-toolchain.toml)"
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' crates/desktop/rust-toolchain.toml)"
           rustup toolchain install "$channel" --profile minimal \
             --target aarch64-apple-darwin --target x86_64-apple-darwin
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: crates/desktop-gpui
+          workspaces: crates/desktop
 
       # Signing + notarization need six repo secrets (packaging/homebrew/README.md lists them).
       # A tagged release refuses to ship without them; a manual run without them (a fork,
@@ -104,7 +104,7 @@ jobs:
           if [ "${{ steps.signing.outputs.enabled }}" = "true" ]; then
             export RECALL_SIGN_IDENTITY="$APPLE_SIGNING_IDENTITY"
           fi
-          crates/desktop-gpui/scripts/bundle.sh --universal
+          crates/desktop/scripts/bundle.sh --universal
 
       # The app is notarized and stapled before it goes into the disk image, so the copy a
       # user drags to Applications carries its own ticket and opens offline.
@@ -114,7 +114,7 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
         run: |
-          app=crates/desktop-gpui/dist/Recall.app
+          app=crates/desktop/dist/Recall.app
           ditto -c -k --keepParent "$app" "$RUNNER_TEMP/Recall.zip"
           xcrun notarytool submit "$RUNNER_TEMP/Recall.zip" \
             --key "$RUNNER_TEMP/AuthKey.p8" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
@@ -129,9 +129,9 @@ jobs:
           if [ "${{ steps.signing.outputs.enabled }}" = "true" ]; then
             export RECALL_SIGN_IDENTITY="$APPLE_SIGNING_IDENTITY"
           fi
-          crates/desktop-gpui/scripts/bundle.sh --dmg-only
+          crates/desktop/scripts/bundle.sh --dmg-only
           mkdir -p dist
-          cp crates/desktop-gpui/dist/Recall-universal.dmg dist/Recall-universal.dmg
+          cp crates/desktop/dist/Recall-universal.dmg dist/Recall-universal.dmg
 
       # The disk image is notarized too, so the download itself opens cleanly. Stapling
       # changes the file, so this runs before the upload: the cask's sha256 is taken from

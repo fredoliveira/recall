@@ -1,6 +1,6 @@
 # Builds and publishes the CLI tarballs/zip for a `v*` tag. The desktop .dmg is built by
 # the separate release-desktop.yml workflow (same tag trigger), which attaches its asset
-# to this same release - so a Tauri/bundling failure never blocks the CLI release.
+# to this same release - so a bundling failure never blocks the CLI release.
 name: Release
 
 on:

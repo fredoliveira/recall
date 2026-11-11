@@ -24,25 +24,25 @@ golden:
     done
 
 # --- Desktop app -------------------------------------------------------------
+# Its own workspace with a pinned toolchain, named explicitly because a global RUSTUP_TOOLCHAIN
+# (mise sets one) overrides rust-toolchain.toml.
 
-# Build and run the desktop app (release; self-contained binary, no Tauri CLI needed).
-desktop-run:
-    cargo run -p recall-desktop --release
+desktop_toolchain := `sed -n 's/^channel = "\(.*\)"$/\1/p' crates/desktop/rust-toolchain.toml`
 
-# Needs the Tauri CLI (`cargo install tauri-cli --locked`) and the local mock so it
-# never hits the live API: `python3 tools/mock_server.py 8732 /tmp/desktop-out.jsonl`.
-# Desktop dev loop with webview hot-reload, pointed at the local mock on :8732.
+# Start the mock first so it never hits the live API:
+# `python3 tools/mock_server.py 8732 /tmp/desktop-out.jsonl`.
+# Run the desktop app against the local mock on :8732.
 desktop-dev:
-    cd crates/desktop && RECALL_HOST=http://127.0.0.1:8732 cargo tauri dev
+    cd crates/desktop && RECALL_HOST=http://127.0.0.1:8732 cargo +{{desktop_toolchain}} run
 
-# Run the GPUI spike of the desktop app against the local mock server (start it first, as
-# for desktop-dev). Its own workspace and toolchain; see crates/desktop-gpui/README.md.
-desktop-gpui-dev:
-    cd crates/desktop-gpui && RECALL_HOST=http://127.0.0.1:8732 cargo +1.99.1 run
+# Uploads to the live host, like the installed app (quit that one first).
+# Build and run the desktop app (release).
+desktop-run:
+    cd crates/desktop && cargo +{{desktop_toolchain}} run --release
 
-# Build the desktop bundle (.app + .dmg on macOS; needs the Tauri CLI).
+# Build dist/Recall.app and the .dmg, signed (see crates/desktop/scripts/bundle.sh).
 desktop-build:
-    cd crates/desktop && cargo tauri build
+    crates/desktop/scripts/bundle.sh --universal --dmg
 
 # --- Quality -----------------------------------------------------------------
 
@@ -59,5 +59,6 @@ lint:
     cargo fmt --check
     npx --yes prettier@3 --check "**/*.md"
     cargo clippy --all-targets -- -D warnings
-    cargo clippy -p recall-desktop --all-targets -- -D warnings
+    cd crates/desktop && cargo +{{desktop_toolchain}} fmt --check
+    cd crates/desktop && cargo +{{desktop_toolchain}} clippy --locked --all-targets -- -D warnings
     cargo test

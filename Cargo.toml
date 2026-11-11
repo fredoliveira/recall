@@ -1,16 +1,12 @@
-# Virtual workspace. Two shipped artifacts - the `recall` CLI (`crates/cli`) and the
-# Tauri desktop app (`crates/desktop`) - share the wire-compatible core (`crates/core`).
+# Virtual workspace: the `recall` CLI (`crates/cli`) on the wire-compatible core (`crates/core`).
 #
-# `default-members` is the CLI + core only, so bare `cargo build/test/clippy` (and CI) skip the
-# desktop crate, which needs a system webview toolkit (webkit2gtk on Linux). Build it explicitly
-# with `-p recall-desktop` or via the desktop CI job.
+# The desktop app (`crates/desktop`, GPUI) shares the core but is its own workspace, with its own
+# lockfile: it pins a newer toolchain (see its rust-toolchain.toml) and brings several hundred
+# crates the CLI never builds. Build it from its directory or with the `just desktop-*` recipes.
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/cli", "crates/desktop"]
-default-members = ["crates/core", "crates/cli"]
-# The GPUI spike is its own workspace for now: it needs a newer toolchain (see its
-# rust-toolchain.toml) and brings several hundred crates the rest never builds.
-exclude = ["crates/desktop-gpui"]
+members = ["crates/core", "crates/cli"]
+exclude = ["crates/desktop"]
 
 # Metadata shared by all workspace crates (each crate inherits with `field.workspace = true`).
 [workspace.package]

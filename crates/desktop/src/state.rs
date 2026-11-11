@@ -1,25 +1,24 @@
 //! App state: owns the follower thread and its cancellation, the resolved log path, the
-//! cached config and the shared upload status. Managed by Tauri (`app.manage`) so commands
-//! and the tray can reach it.
+//! cached config and the shared upload status.
 //!
-//! Nothing polls: every change to what the window displays (follower start, stop or
-//! exit, a saved token, an upload outcome) calls [`AppState::notify`], which emits
-//! `status-changed` to the webview.
+//! Nothing polls: every change to what the windows display (follower start, stop or exit, a
+//! saved token, an upload outcome) calls [`AppState::notify`], which sends
+//! [`Signal::Status`] to the main thread.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
-use serde::Serialize;
-use tauri::AppHandle;
+use smol::channel::Sender;
 
 use recall_core::checkpoint::{self, Checkpoints};
-use recall_core::config::Config;
+use recall_core::config::{self, Config};
 use recall_core::follower::Follower;
 use recall_core::services::seventeenlands::ApiClient;
 use recall_core::{paths, services};
 
+use crate::feed::Signal;
 use crate::observer::{ObservingSubmitter, UploadStatus};
 
 pub struct AppState {
@@ -33,13 +32,12 @@ pub struct AppState {
     /// The config as last read from disk. Refreshed on every start (so after a token save)
     /// and when the window gains focus, which picks up a hand-edit of `config.toml`.
     cfg: Mutex<Config>,
-    /// Set once in `setup`; before that, `notify` is a no-op.
-    app: OnceLock<AppHandle>,
+    signals: Sender<Signal>,
 }
 
-/// Status snapshot serialized to the UI.
-#[derive(Serialize)]
-pub struct StatusDto {
+/// A snapshot of everything the windows show about the follower.
+#[derive(Clone, Default)]
+pub struct Status {
     pub following: bool,
     pub token_present: bool,
     /// Last four characters of the saved token, so the UI can show which one is in use
@@ -54,12 +52,10 @@ pub struct StatusDto {
     pub last_failure: Option<String>,
     /// Enabled service names, primary first (e.g. `["seventeenlands"]`).
     pub services: Vec<String>,
-    /// Crate version (e.g. "0.1.1"), rendered in the in-window header.
-    pub app_version: String,
 }
 
 impl AppState {
-    pub fn new(host_override: Option<String>) -> Self {
+    pub fn new(host_override: Option<String>, signals: Sender<Signal>) -> Self {
         // Dev/test override (parallels RECALL_HOST): pin the followed log file so the
         // app can be exercised headlessly against a fixture log.
         let log_path = std::env::var("RECALL_LOG").ok().map(PathBuf::from);
@@ -71,20 +67,13 @@ impl AppState {
             log_path: Mutex::new(log_path),
             upload: Arc::new(Mutex::new(UploadStatus::default())),
             cfg: Mutex::new(Config::load()),
-            app: OnceLock::new(),
+            signals,
         }
     }
 
-    /// Wire in the live `AppHandle` so status changes can reach the webview.
-    pub fn attach(&self, app: AppHandle) {
-        let _ = self.app.set(app);
-    }
-
-    /// Tell the webview that the displayed status changed.
+    /// Tell the windows that the displayed status changed. Never blocks.
     pub fn notify(&self) {
-        if let Some(app) = self.app.get() {
-            crate::status_changed(app);
-        }
+        let _ = self.signals.try_send(Signal::Status);
     }
 
     /// The cached config (see the `cfg` field for when it is refreshed).
@@ -104,9 +93,7 @@ impl AppState {
         if let Some(p) = self.log_path.lock().unwrap().clone() {
             return Some(p);
         }
-        paths::possible_current_filepaths()
-            .into_iter()
-            .find(|p| p.exists())
+        paths::possible_current_filepaths().into_iter().find(|p| p.exists())
     }
 
     pub fn set_log_path(&self, p: Option<PathBuf>) {
@@ -115,9 +102,7 @@ impl AppState {
 
     /// Upload host: `RECALL_HOST` if set, else `services.seventeenlands.host`, else live.
     fn host_for(&self, cfg: &Config) -> String {
-        self.host_override
-            .clone()
-            .unwrap_or_else(|| cfg.seventeenlands_host())
+        self.host_override.clone().unwrap_or_else(|| cfg.seventeenlands_host())
     }
 
     pub fn is_following(&self) -> bool {
@@ -130,12 +115,8 @@ impl AppState {
             return Ok(());
         }
         let cfg = self.reload_config();
-        let token = cfg
-            .seventeenlands_token()
-            .ok_or("No valid token configured")?;
-        let path = self
-            .resolve_log_path()
-            .ok_or("No Player.log found - set a log path in Settings")?;
+        let token = cfg.seventeenlands_token().ok_or("No valid token configured")?;
+        let path = self.resolve_log_path().ok_or("No Player.log found - set a log path in Settings")?;
         let path_str = path.to_string_lossy().to_string();
 
         self.cancel.store(false, Ordering::Relaxed);
@@ -143,12 +124,10 @@ impl AppState {
         let following = self.following.clone();
         let host = self.host_for(&cfg);
         let upload = self.upload.clone();
-        // Both callbacks run on the follower thread; emitting from there is fine.
-        let app = self.app.get().cloned();
+        // Runs on the follower thread; sending from there never blocks.
+        let signals = self.signals.clone();
         let notify = move || {
-            if let Some(app) = &app {
-                crate::status_changed(app);
-            }
+            let _ = signals.try_send(Signal::Status);
         };
 
         let handle = std::thread::Builder::new()
@@ -191,17 +170,43 @@ impl AppState {
         self.start()
     }
 
-    pub fn status(&self) -> StatusDto {
+    /// Validate (UUID v4) and save the token to the file the CLI reads, then (re)start.
+    pub fn save_token(&self, token: &str) -> Result<(), String> {
+        let valid = config::validate_uuid_v4(token.trim())
+            .ok_or("That doesn't look like a 17Lands token (it should be a UUID).")?;
+        // Strict: a config that exists but won't parse must not be overwritten with defaults
+        // (that would silently drop the user's archive and host settings).
+        let mut cfg = Config::load_strict()
+            .map_err(|e| format!("Couldn't read the existing config; fix or remove it first: {e}"))?;
+        cfg.set_seventeenlands_token(&valid);
+        cfg.save().map_err(|e| format!("Couldn't save the config: {e}"))?;
+        let result = self.restart();
+        // Even when the follower could not start, the token is now present.
+        self.notify();
+        result
+    }
+
+    /// Follow this log file instead of the auto-detected one, then restart.
+    pub fn follow(&self, path: &str) -> Result<(), String> {
+        let path = PathBuf::from(path.trim());
+        if !path.is_file() {
+            return Err(format!("There's no file at {}", path.display()));
+        }
+        self.set_log_path(Some(path));
+        let result = self.restart();
+        self.notify();
+        result
+    }
+
+    pub fn status(&self) -> Status {
         let u = self.upload.lock().unwrap().clone();
         let cfg = self.config();
         let token = cfg.seventeenlands_token();
-        StatusDto {
+        Status {
             following: self.is_following(),
             token_present: token.is_some(),
             token_hint: token.map(|t| t[t.len().saturating_sub(4)..].to_string()),
-            log_path: self
-                .resolve_log_path()
-                .map(|p| p.to_string_lossy().to_string()),
+            log_path: self.resolve_log_path().map(|p| p.to_string_lossy().to_string()),
             host: self.host_for(&cfg),
             upload_count: u.count,
             last_endpoint: u.last_endpoint,
@@ -209,7 +214,6 @@ impl AppState {
             upload_failed: u.failed,
             last_failure: u.last_failure,
             services: cfg.service_names(),
-            app_version: env!("CARGO_PKG_VERSION").to_string(),
         }
     }
 }

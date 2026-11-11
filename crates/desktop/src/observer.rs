@@ -9,13 +9,12 @@
 
 use std::sync::{Arc, Mutex};
 
-use serde::Serialize;
 use serde_json::Value;
 
 use recall_core::services::seventeenlands::{ApiClient, SubmitOutcome, Submitter};
 
 /// Snapshot of upload activity, shared with the UI.
-#[derive(Default, Clone, Serialize)]
+#[derive(Default, Clone)]
 pub struct UploadStatus {
     /// Uploads 17Lands accepted.
     pub count: u64,
@@ -36,16 +35,8 @@ pub struct ObservingSubmitter {
 }
 
 impl ObservingSubmitter {
-    pub fn new(
-        inner: ApiClient,
-        status: Arc<Mutex<UploadStatus>>,
-        on_change: Box<dyn Fn() + Send>,
-    ) -> Self {
-        Self {
-            inner,
-            status,
-            on_change,
-        }
+    pub fn new(inner: ApiClient, status: Arc<Mutex<UploadStatus>>, on_change: Box<dyn Fn() + Send>) -> Self {
+        Self { inner, status, on_change }
     }
 }
 

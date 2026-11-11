@@ -31,7 +31,8 @@ Value-affecting oddities inherited from upstream are marked `WIRE:` in the code
 
 ## Architecture
 
-Cargo workspace, three crates under `crates/`:
+Three crates under `crates/`: a Cargo workspace of core + cli, and the desktop app as its own
+workspace:
 
 - **`core`** (`recall-core`)
     - `follower.rs` + `follower/` - the parser (port of upstream's `Follower` class). `follower.rs`:
@@ -56,11 +57,13 @@ Cargo workspace, three crates under `crates/`:
     - `tests/` parity fixtures (see `tests/fixtures/README.md`), `examples/` `replay`, `golden`,
       `replay_archive`.
 - **`cli`** (`recall`) - `main.rs`: config + token resolution, logging, processing loop.
-- **`desktop`** (`recall-desktop`) - Tauri v2 menu-bar app on the same core; observes uploads via an
-  `ObservingSubmitter` decorator under the 17Lands adapter. See its README.
+- **`desktop`** (`recall-desktop`) - GPUI (gpui-kit) macOS menu-bar app on the same core; observes
+  uploads via an `ObservingSubmitter` decorator under the 17Lands adapter. Every size lives in
+  `src/style.rs`. See its README.
 
-`default-members` is core + cli, so bare `cargo` commands skip the desktop crate; CI builds and
-clippies it separately.
+The desktop crate is excluded from the workspace (own lockfile, pinned toolchain in its
+`rust-toolchain.toml`), so bare `cargo` commands skip it; build it from `crates/desktop` with
+`cargo +<that toolchain>` or the `just desktop-*` recipes. CI builds and clippies it separately.
 
 ### The event model
 
@@ -112,7 +115,7 @@ Two nets; both must stay **byte-identical** through any change that isn't an ups
    intentional wire change.
 
 `just lint` (fmt check, `clippy --all-targets -D warnings`, tests) mirrors CI and must be clean
-before a commit; CI also clippies the desktop crate.
+before a commit; it covers the desktop crate too.
 
 ## Tracking upstream
 

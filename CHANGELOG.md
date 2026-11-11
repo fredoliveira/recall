@@ -21,10 +21,11 @@ All notable changes to this project are documented here. The format is based on
   and a stalled connection now times out and is retried instead of hanging the follower.
 - The desktop app no longer polls: the window status updates when something changes, instead of
   re-reading `config.toml` every 2 seconds.
-- Desktop app: redesigned window (follows the system light/dark theme) with a new Settings screen
-  that shows what is being followed, the saved token's last four characters and the enabled
-  services. The menu-bar menu is down to one "Open Recall…" item; the status line and the separate
-  "Settings…" item are gone.
+- Desktop app: rebuilt as a native app on GPUI, replacing the Tauri webview. The window is the log
+  with one status line under it (last upload and upload count), Settings is its own window (⌘,), and
+  both follow the system light/dark theme. The menu-bar menu is "Open Recall", "Settings…" and "Quit
+  Recall"; its status line is gone. Same bundle identifier, config and checkpoint, so it upgrades in
+  place. macOS only.
 - Release binaries are built with LTO and stripped (the CLI is about a third smaller).
 - The desktop app is signed with a Developer ID and notarized by Apple, so it opens without the
   Gatekeeper workaround.
