@@ -24,6 +24,8 @@ pub const MAX_TOTAL_RETRY_DURATION: Duration = Duration::from_secs(24 * 60 * 60)
 pub enum RetryError<E> {
     /// Response stayed invalid until the total-duration deadline (`RetryLimitExceededError`).
     LimitExceeded,
+    /// The caller asked to stop (not in upstream): nothing more was attempted.
+    Cancelled,
     /// A non-retryable error, or a retryable one that survived to the deadline. Python
     /// re-raises the original exception; we carry it out unchanged.
     Fatal(E),
@@ -36,7 +38,7 @@ pub enum RetryError<E> {
 /// which the caller normalizes) and `Err(E)` only for transport-level failures.
 /// `error_validator` decides whether such an `Err(E)` is retryable.
 pub fn retry_until_successful<T, E, F, V, G>(
-    mut callback: F,
+    callback: F,
     response_validator: V,
     error_validator: G,
     initial_retry_delay: Duration,
@@ -48,11 +50,47 @@ where
     V: Fn(&T) -> bool,
     G: Fn(&E) -> bool,
 {
+    retry_until_cancelled(
+        callback,
+        response_validator,
+        error_validator,
+        || false,
+        initial_retry_delay,
+        max_retry_delay,
+        max_total_retry_duration,
+    )
+}
+
+/// How often a backoff sleep looks at the cancel flag.
+const CANCEL_POLL: Duration = Duration::from_millis(100);
+
+/// [`retry_until_successful`] with a way out: `cancelled` is consulted before every attempt
+/// and every [`CANCEL_POLL`] during the backoff sleep, and ends the loop with
+/// [`RetryError::Cancelled`]. Without it a caller waiting on this thread (the desktop app
+/// joining its follower) would hang for a whole backoff delay - up to ten minutes.
+pub fn retry_until_cancelled<T, E, F, V, G, C>(
+    mut callback: F,
+    response_validator: V,
+    error_validator: G,
+    cancelled: C,
+    initial_retry_delay: Duration,
+    max_retry_delay: Option<Duration>,
+    max_total_retry_duration: Option<Duration>,
+) -> Result<T, RetryError<E>>
+where
+    F: FnMut() -> Result<T, E>,
+    V: Fn(&T) -> bool,
+    G: Fn(&E) -> bool,
+    C: Fn() -> bool,
+{
     // Python: last_call_at = utcnow() + max_total_retry_duration (when set).
     let deadline = max_total_retry_duration.map(|d| Instant::now() + d);
     let mut next_retry_delay = initial_retry_delay;
 
     loop {
+        if cancelled() {
+            return Err(RetryError::Cancelled);
+        }
         // is_last_call flips true only once the total deadline has passed.
         let is_last_call = deadline.is_some_and(|dl| dl < Instant::now());
 
@@ -71,7 +109,17 @@ where
             }
         }
 
-        std::thread::sleep(next_retry_delay);
+        let wake_at = Instant::now() + next_retry_delay;
+        loop {
+            if cancelled() {
+                return Err(RetryError::Cancelled);
+            }
+            let left = wake_at.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                break;
+            }
+            std::thread::sleep(left.min(CANCEL_POLL));
+        }
         next_retry_delay = next_retry_delay.saturating_mul(2);
         if let Some(max) = max_retry_delay
             && max < next_retry_delay
@@ -86,15 +134,21 @@ where
 /// All errors reaching this layer are transport errors (the caller has already mapped
 /// non-2xx HTTP statuses to `Ok`), so every `Err` is retryable - mirroring Python's
 /// `_should_retry_error` returning `True` for `ConnectionError`.
-pub fn retry_api_call<T, E, F, V>(callback: F, response_validator: V) -> Result<T, RetryError<E>>
+pub fn retry_api_call<T, E, F, V, C>(
+    callback: F,
+    response_validator: V,
+    cancelled: C,
+) -> Result<T, RetryError<E>>
 where
     F: FnMut() -> Result<T, E>,
     V: Fn(&T) -> bool,
+    C: Fn() -> bool,
 {
-    retry_until_successful(
+    retry_until_cancelled(
         callback,
         response_validator,
         |_e| true,
+        cancelled,
         INITIAL_RETRY_DELAY,
         Some(MAX_RETRY_DELAY),
         Some(MAX_TOTAL_RETRY_DURATION),
@@ -217,6 +271,56 @@ mod tests {
             Some(Duration::from_secs(0)),
         );
         assert!(matches!(r, Err(RetryError::LimitExceeded)));
+    }
+
+    #[test]
+    fn cancelling_cuts_the_backoff_sleep_short() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        let setter = cancel.clone();
+        let t = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            setter.store(true, Ordering::Relaxed);
+        });
+        let calls = Cell::new(0);
+        let started = Instant::now();
+        let r: Result<u16, RetryError<()>> = retry_until_cancelled(
+            || {
+                calls.set(calls.get() + 1);
+                Ok(503)
+            },
+            |&s| !(500..600).contains(&s),
+            |_| true,
+            || cancel.load(Ordering::Relaxed),
+            Duration::from_secs(600),
+            None,
+            None,
+        );
+        t.join().unwrap();
+        assert!(matches!(r, Err(RetryError::Cancelled)));
+        assert_eq!(calls.get(), 1);
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn an_already_cancelled_call_attempts_nothing() {
+        let calls = Cell::new(0);
+        let r: Result<u16, RetryError<()>> = retry_until_cancelled(
+            || {
+                calls.set(calls.get() + 1);
+                Ok(200)
+            },
+            |_| true,
+            |_| true,
+            || true,
+            FAST,
+            None,
+            None,
+        );
+        assert!(matches!(r, Err(RetryError::Cancelled)));
+        assert_eq!(calls.get(), 0);
     }
 
     #[test]

@@ -24,6 +24,10 @@ brew install --cask fredoliveira/tap/recall-desktop
 cargo install --git https://github.com/fredoliveira/recall recall
 ```
 
+On Windows, download `recall-x86_64-pc-windows-msvc.zip` from the
+[latest release](https://github.com/fredoliveira/recall/releases/latest), unzip it, and run
+`recall.exe` from a terminal (or build from source with the `cargo install` line above).
+
 ## Running
 
 ```sh
@@ -37,10 +41,10 @@ captured.
 ## Configuration
 
 `<config_dir>/recall/config.toml` (`~/.config/recall/config.toml` on Linux,
-`~/Library/Application Support/recall/config.toml` on macOS). One section per service; a present
-section enables it. Create it with your 17Lands token (from
-[17lands.com/account](https://www.17lands.com/account)); without one, `recall` prints the path and
-exits.
+`~/Library/Application Support/recall/config.toml` on macOS, `%APPDATA%\recall\config.toml` on
+Windows). One section per service; a present section enables it. Create it with your 17Lands token
+(from [17lands.com/account](https://www.17lands.com/account)); without one, `recall` prints the path
+and exits.
 
 ```toml
 [services.seventeenlands]
@@ -63,8 +67,9 @@ pass it explicitly - `recall path/to/Player.log` always processes the whole file
 Add an empty `[services.archive]` section and every parsed event is also written locally,
 service-neutral, alongside the 17Lands upload. Files land in
 `~/Library/Application Support/recall/archive/` on macOS and `~/.local/share/recall/archive/` on
-Linux (override with `dir`): one `<YYYY-MM-DD>.jsonl` per day, dated by the log timestamp, one JSON
-object per line - `{"v": 1, "event": "<name>", ...event fields}`. Summarize a file with
+Linux, and `%APPDATA%\recall\archive\` on Windows (override with `dir`): one `<YYYY-MM-DD>.jsonl`
+per day, dated by the log timestamp, one JSON object per line -
+`{"v": 1, "event": "<name>", ...event fields}`. Summarize a file with
 `cargo run -p recall-core --example replay_archive -- <file.jsonl>`.
 
 ## Repository layout

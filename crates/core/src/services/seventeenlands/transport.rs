@@ -18,6 +18,8 @@
 #![allow(dead_code)]
 
 use std::io::Write;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use serde::Serialize;
@@ -43,6 +45,9 @@ pub enum SubmitOutcome {
     Rejected { status: u16 },
     /// Never answered: transport error, gzip failure, or retries exhausted.
     Failed,
+    /// The client was told to stop ([`ApiClient::with_cancel`]) before the server took the
+    /// event. Not a failure: the checkpoint stays behind it, so the next start sends it.
+    Cancelled,
 }
 
 /// How long to wait for the TCP + TLS handshake.
@@ -59,6 +64,8 @@ pub struct ApiClient {
     /// timeouts - a stalled connection surfaces as a transport error (retried) instead of
     /// hanging the follower. Transport only; payload bytes are unaffected.
     agent: ureq::Agent,
+    /// Set by the owner to abandon the retry backoff (see [`ApiClient::with_cancel`]).
+    cancel: Option<Arc<AtomicBool>>,
 }
 
 impl ApiClient {
@@ -70,7 +77,17 @@ impl ApiClient {
                 .timeout_read(IO_TIMEOUT)
                 .timeout_write(IO_TIMEOUT)
                 .build(),
+            cancel: None,
         }
+    }
+
+    /// Give up waiting once `cancel` is set: the retry backoff (up to ten minutes between
+    /// attempts while 17Lands is down or rate-limiting) ends within a fraction of a second
+    /// and the submission returns [`SubmitOutcome::Cancelled`]. A request already on the
+    /// wire still runs to its own timeout.
+    pub fn with_cancel(mut self, cancel: Arc<AtomicBool>) -> Self {
+        self.cancel = Some(cancel);
+        self
     }
 }
 
@@ -111,6 +128,11 @@ impl Submitter for ApiClient {
                 Ok(resp)
             },
             |resp: &ureq::Response| !(is_server_error(resp) || is_throttled(resp)),
+            || {
+                self.cancel
+                    .as_ref()
+                    .is_some_and(|c| c.load(Ordering::Relaxed))
+            },
         );
 
         match result {
@@ -139,6 +161,10 @@ impl Submitter for ApiClient {
                     "Giving up on {endpoint} after exhausting retries (server 5xx or rate limit)"
                 );
                 SubmitOutcome::Failed
+            }
+            Err(crate::retry::RetryError::Cancelled) => {
+                log::info!("Stopped before {endpoint} was uploaded; the next start sends it");
+                SubmitOutcome::Cancelled
             }
             Err(crate::retry::RetryError::Fatal(e)) => {
                 log::error!("Transport error posting to {endpoint}: {e}");

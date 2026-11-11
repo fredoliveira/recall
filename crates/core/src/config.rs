@@ -124,13 +124,14 @@ impl Config {
         self.save_to(&path)
     }
 
-    /// Save to an explicit path, creating parent directories.
+    /// Save to an explicit path, creating parent directories. The file holds the token, so
+    /// on unix it is readable by its owner only.
     pub fn save_to(&self, path: &Path) -> io::Result<()> {
         let body = toml::to_string(self).map_err(io::Error::other)?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(path, body)
+        write_private(path, body.as_bytes())
     }
 
     /// The configured 17Lands token, if present and a valid UUID.
@@ -251,6 +252,28 @@ fn missing_token_message(path: Option<&Path>) -> String {
     )
 }
 
+/// Write `body` to `path` with mode 0600 on unix - also when the file already exists with
+/// wider permissions (one written by an earlier version). Elsewhere, a plain write.
+fn write_private(path: &Path, body: &[u8]) -> io::Result<()> {
+    use std::io::Write;
+
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // `mode` only applies when the file is created.
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+    file.write_all(body)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -285,6 +308,24 @@ mod tests {
         assert_eq!(Config::load_from(&path), cfg);
         assert_eq!(cfg.seventeenlands_token().as_deref(), Some(TOKEN));
         assert_eq!(cfg.service_names(), ["seventeenlands", "archive"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saved_config_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+
+        Config::default().save_to(&path).unwrap();
+        assert_eq!(mode(&path), 0o600);
+
+        // A file left world-readable by an earlier version is tightened on the next save.
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        Config::default().save_to(&path).unwrap();
+        assert_eq!(mode(&path), 0o600);
     }
 
     #[test]

@@ -156,8 +156,9 @@ impl AppState {
                 // Loaded per start: a stop→start (or an app relaunch) replays the log up to
                 // the checkpoint with the services muted, then carries on live.
                 let mut checkpoints = Checkpoints::load(checkpoint::scope_for(&host, &token));
-                let wire =
-                    ObservingSubmitter::new(ApiClient::new(host), upload, Box::new(notify.clone()));
+                // The client shares the cancel flag, so a stop also ends a retry backoff.
+                let client = ApiClient::new(host).with_cancel(cancel.clone());
+                let wire = ObservingSubmitter::new(client, upload, Box::new(notify.clone()));
                 let mut follower = Follower::with_sink(services::from_config(&cfg, token, wire));
                 follower.parse_log_resumable(&path_str, true, &cancel, Some(&mut checkpoints));
                 following.store(false, Ordering::Relaxed);
@@ -170,7 +171,9 @@ impl AppState {
         Ok(())
     }
 
-    /// Signal cancellation and join the follower thread (returns within ~one 500ms tick).
+    /// Signal cancellation and join the follower thread. Returns within ~one 500ms tick,
+    /// also while an upload is backing off; only a request already on the wire can hold it
+    /// longer (up to the HTTP timeouts).
     pub fn stop(&self) {
         self.cancel.store(true, Ordering::Relaxed);
         if let Some(handle) = self.thread.lock().unwrap().take() {
