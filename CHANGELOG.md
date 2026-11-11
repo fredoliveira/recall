@@ -22,6 +22,8 @@ All notable changes to this project are documented here. The format is based on
 - The desktop app no longer polls: the tray line and the window status update when something
   changes, instead of re-reading `config.toml` every 2 seconds.
 - Release binaries are built with LTO and stripped (the CLI is about a third smaller).
+- The desktop app is signed with a Developer ID and notarized by Apple, so it opens without the
+  Gatekeeper workaround.
 - Releases are gated on the test suite and on the tag matching the manifest versions.
 
 ### Fixed

@@ -10,10 +10,8 @@ through a GUI; it reads and writes the same `config.toml` as the CLI.
 brew install --cask fredoliveira/tap/recall-desktop
 ```
 
-The release workflow attaches a universal `.dmg` (Intel + Apple Silicon). The app is not yet
-Apple-notarized, so on first launch open it via right-click → Open (or
-`xattr -dr com.apple.quarantine "/Applications/Recall.app"`). See
-[`packaging/homebrew/README.md`](../../packaging/homebrew/README.md).
+The release workflow attaches a universal `.dmg` (Intel + Apple Silicon), signed with a Developer ID
+and notarized by Apple. See [`packaging/homebrew/README.md`](../../packaging/homebrew/README.md).
 
 ## Architecture
 
@@ -73,6 +71,4 @@ cd crates/desktop && cargo tauri build         # bundles under target/release/bu
 
 ## TODO
 
-- Code signing / notarization (see
-  [`packaging/homebrew/README.md`](../../packaging/homebrew/README.md))
 - Windows (`.msi`/NSIS) targets can be added to `tauri.conf.json` later.

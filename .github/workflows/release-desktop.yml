@@ -1,4 +1,4 @@
-# Builds the macOS universal desktop .dmg for a `v*` tag and attaches it to the same
+# Builds, signs and notarizes the macOS universal desktop .dmg for a `v*` tag and attaches it to the same
 # GitHub release that release.yml publishes the CLI tarballs to. Kept as a separate
 # workflow so a Tauri/bundling failure never blocks the CLI release, and so the .dmg
 # can be rebuilt on its own via workflow_dispatch.
@@ -40,9 +40,68 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2" --locked
 
+      # Signing + notarization need six repo secrets (packaging/homebrew/README.md lists them).
+      # A tagged release refuses to ship without them; a manual run without them (a fork,
+      # say) still builds, unsigned, with a warning.
+      - name: Check signing secrets
+        id: signing
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          missing=""
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+            APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_P8; do
+            eval "value=\${$name}"
+            [ -n "$value" ] || missing="$missing $name"
+          done
+          if [ -z "$missing" ]; then
+            # notarytool wants the API key as a file.
+            umask 077
+            printf '%s\n' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8"
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          elif [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            echo "::error::Refusing to release an unsigned app. Missing secrets:$missing"
+            exit 1
+          else
+            echo "::warning::Building UNSIGNED (not notarized). Missing secrets:$missing"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # With these variables present Tauri's bundler imports the certificate into a
+      # temporary keychain, signs the app (hardened runtime) and the .dmg, submits the app
+      # to Apple's notary service, waits, and staples the ticket. It treats a variable that
+      # is set but empty as set, hence the unset for the unsigned path.
       - name: Build universal .dmg
         working-directory: crates/desktop
-        run: cargo tauri build --target universal-apple-darwin --bundles dmg -- --locked
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
+        run: |
+          if [ "${{ steps.signing.outputs.enabled }}" != "true" ]; then
+            unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+              APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_PATH
+          fi
+          cargo tauri build --target universal-apple-darwin --bundles dmg -- --locked
+
+      # Tauri only warns when notarization is skipped, so prove it here: the signature is
+      # valid, the ticket is stapled, and Gatekeeper would let the app launch.
+      - name: Verify the app is signed and notarized
+        if: steps.signing.outputs.enabled == 'true'
+        run: |
+          app="$(find target/universal-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' | head -n1)"
+          test -n "$app" || { echo "no .app produced"; exit 1; }
+          codesign --verify --deep --strict --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=4 "$app"
 
       - name: Stage .dmg under a stable name
         run: |
@@ -50,6 +109,27 @@ jobs:
           test -n "$dmg" || { echo "no .dmg produced"; exit 1; }
           mkdir -p dist
           cp "$dmg" "dist/Recall-universal.dmg"
+
+      # Tauri notarizes the app inside the .dmg but not the disk image itself. Do that too,
+      # so the download opens cleanly. Stapling changes the file, so this runs before the
+      # upload: the cask's sha256 is taken from the artifact.
+      - name: Notarize and staple the .dmg
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          xcrun notarytool submit dist/Recall-universal.dmg \
+            --key "$RUNNER_TEMP/AuthKey.p8" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" \
+            --wait
+          # Fails unless the submission above was accepted.
+          xcrun stapler staple dist/Recall-universal.dmg
+          spctl --assess --type open --context context:primary-signature --verbose=4 \
+            dist/Recall-universal.dmg
+
+      - name: Remove the API key file
+        if: always()
+        run: rm -f "$RUNNER_TEMP/AuthKey.p8"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
