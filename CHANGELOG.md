@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- Uploads reuse one HTTP connection instead of opening a new one (TCP + TLS handshake) per event,
+  and a stalled connection now times out and is retried instead of hanging the follower.
+- The desktop app no longer polls: the tray line and the window status update when something
+  changes, instead of re-reading `config.toml` every 2 seconds.
+- Release binaries are built with LTO and stripped (the CLI is about a third smaller).
+- Releases are gated on the test suite and on the tag matching the manifest versions.
+
+### Fixed
+
+- The declared minimum Rust version is now 1.88, which the code has needed since it adopted
+  let-chains (it said 1.85).
+
 ## [0.3.1] - 2026-10-25
 
 ### Fixed
