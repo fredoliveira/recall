@@ -61,6 +61,14 @@ the release workflow's job. The bundle has the installed app's identifier and, l
 the live host: quit the installed Recall before opening it. The universal build needs
 `rustup target add x86_64-apple-darwin` on the pinned toolchain.
 
+## Icon
+
+The app icon is `assets/Recall.icon` (Icon Composer), one full-bleed layer: a stepped temple at
+night, its shrine door glowing. `assets/icon.icns` is the same art masked flat, for when `actool`
+can't compile the layered one. The menu-bar icon is the same temple, drawn in code in
+[`src/tray.rs`](src/tray.rs). Both are a nod to Mark Poole's art for Ancestral Recall, in the same
+style as [Ponder](https://github.com/fredoliveira/ponder)'s icon.
+
 ## TODO
 
 - UI tests (GPUI has a headless harness).

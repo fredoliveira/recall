@@ -46,7 +46,8 @@ write_info_plist() {
   <key>CFBundleDisplayName</key><string>Recall</string>
   <key>CFBundleIdentifier</key><string>$bundle_id</string>
   <key>CFBundleExecutable</key><string>Recall</string>
-  <key>CFBundleIconFile</key><string>icon</string>
+  <key>CFBundleIconFile</key><string>Recall</string>
+  <key>CFBundleIconName</key><string>Recall</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
   <key>CFBundleVersion</key><string>$version</string>
@@ -82,7 +83,19 @@ if $build; then
     cp "target/release/$bin" "$app/Contents/MacOS/Recall"
   fi
 
-  cp "$crate/assets/icon.icns" "$app/Contents/Resources/icon.icns"
+  # The icon is an Icon Composer document. Xcode's asset compiler turns it into Assets.car
+  # (the layered icon recent macOS draws) plus a flat Recall.icns for older systems. Without
+  # an Xcode that knows the format, the committed flat copy is used alone.
+  if xcrun actool "$crate/assets/Recall.icon" --compile "$app/Contents/Resources" \
+    --app-icon Recall --platform macosx --minimum-deployment-target 11.0 \
+    --output-partial-info-plist /dev/null >/dev/null 2>&1 &&
+    [ -f "$app/Contents/Resources/Assets.car" ]; then
+    echo "Compiled the layered icon."
+  else
+    echo "actool could not compile Recall.icon: using the flat icon only." >&2
+    rm -f "$app/Contents/Resources/Assets.car"
+    cp "$crate/assets/icon.icns" "$app/Contents/Resources/Recall.icns"
+  fi
 
   write_info_plist
 
