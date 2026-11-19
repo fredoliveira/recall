@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- Homebrew names: the desktop app is now the `recall` cask
+  (`brew install --cask fredoliveira/tap/recall`) and the CLI the `recall-cli` formula
+  (`brew install fredoliveira/tap/recall-cli`).
+
 ## [0.4.1] - 2026-11-19
 
 ### Changed

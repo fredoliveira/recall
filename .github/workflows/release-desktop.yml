@@ -212,11 +212,11 @@ jobs:
           git clone "https://x-access-token:${TAP_PUSH_TOKEN}@github.com/fredoliveira/homebrew-tap.git" tap
           mkdir -p tap/Casks
           sh packaging/homebrew/generate.sh cask "$version" "$sha" \
-            > tap/Casks/recall-desktop.rb
+            > tap/Casks/recall.rb
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Casks/recall-desktop.rb
-          git commit -m "recall-desktop ${version}"
+          git add Casks/recall.rb
+          git commit -m "recall ${version}"
           # The CLI workflow may push its formula bump concurrently; rebase and retry.
           for _ in 1 2 3; do git push && break; git pull --rebase; done

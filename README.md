@@ -14,11 +14,11 @@ for it: what Recall sends to 17Lands is byte-for-byte identical to the original.
 ## Install
 
 ```sh
-# CLI via Homebrew (macOS/Linux):
-brew install fredoliveira/tap/recall
-
 # Desktop menu-bar app via Homebrew (macOS):
-brew install --cask fredoliveira/tap/recall-desktop
+brew install --cask fredoliveira/tap/recall
+
+# CLI via Homebrew (macOS/Linux):
+brew install fredoliveira/tap/recall-cli
 
 # CLI from source (builds and installs the binary onto your PATH):
 cargo install --git https://github.com/fredoliveira/recall recall

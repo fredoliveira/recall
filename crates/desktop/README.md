@@ -10,7 +10,7 @@ hundred crates the CLI never builds.
 ## Install
 
 ```sh
-brew install --cask fredoliveira/tap/recall-desktop
+brew install --cask fredoliveira/tap/recall
 ```
 
 The release workflow attaches a universal `.dmg` (Intel + Apple Silicon), signed with a Developer ID

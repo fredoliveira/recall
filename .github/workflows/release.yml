@@ -128,11 +128,11 @@ jobs:
             "$(sha recall-aarch64-apple-darwin.tar.gz)" \
             "$(sha recall-x86_64-apple-darwin.tar.gz)" \
             "$(sha recall-x86_64-unknown-linux-gnu.tar.gz)" \
-            > tap/Formula/recall.rb
+            > tap/Formula/recall-cli.rb
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/recall.rb
-          git commit -m "recall ${version}"
+          git add Formula/recall-cli.rb
+          git commit -m "recall-cli ${version}"
           # The desktop workflow may push its cask bump concurrently; rebase and retry.
           for _ in 1 2 3; do git push && break; git pull --rebase; done
