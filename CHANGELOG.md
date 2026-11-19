@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-19
+
+### Changed
+
+- The desktop app has a new icon: a stepped temple at night, its shrine door glowing, a nod to
+  Ancestral Recall's art and a sibling of Ponder's icon. The menu-bar icon is the same temple. On
+  recent macOS the app icon is the layered (Icon Composer) kind.
+
 ## [0.4.0] - 2026-11-11
 
 ### Added
@@ -144,7 +152,8 @@ Initial release. A drop-in, wire-compatible Rust port of the official 17Lands MT
 - Oracle parity tooling (`tools/oracle/`, `examples/oracle_diff.rs`) and an offline `replay`
   example.
 
-[Unreleased]: https://github.com/fredoliveira/recall/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/fredoliveira/recall/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/fredoliveira/recall/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/fredoliveira/recall/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/fredoliveira/recall/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/fredoliveira/recall/compare/v0.2.0...v0.3.0
