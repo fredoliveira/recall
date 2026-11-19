@@ -80,9 +80,11 @@ cask "recall-desktop" do
   desc "Menu-bar app for the Recall MTG Arena log parser"
   homepage "https://github.com/fredoliveira/recall"
 
-  depends_on macos: ">= :big_sur"
+  depends_on :macos
 
   app "Recall.app"
+
+  uninstall quit: "com.helloform.recall"
 
   zap trash: "~/Library/Application Support/recall"
 end
