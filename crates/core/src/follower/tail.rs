@@ -309,20 +309,33 @@ impl<S: Service> Follower<S> {
 }
 
 /// Silences the `log` macros for the duration of a muted replay, restoring the previous
-/// level on drop. Global, which is fine here: the replay runs on the one follower thread
-/// and nothing else in the process has anything to say meanwhile.
-struct Quiet(log::LevelFilter);
+/// level when the last replay in the process ends. The level is global, so this is counted:
+/// an app can run more than one follower (one that uploads, one that feeds its views), and
+/// their replays overlap at launch. While any of them replays, all of them are quiet.
+struct Quiet;
+
+/// How many replays are under way, and the level to go back to after the last.
+static QUIET: std::sync::Mutex<(usize, log::LevelFilter)> =
+    std::sync::Mutex::new((0, log::LevelFilter::Off));
 
 impl Quiet {
     fn begin() -> Self {
-        let previous = log::max_level();
-        log::set_max_level(log::LevelFilter::Off);
-        Self(previous)
+        let mut quiet = QUIET.lock().unwrap_or_else(|e| e.into_inner());
+        if quiet.0 == 0 {
+            quiet.1 = log::max_level();
+            log::set_max_level(log::LevelFilter::Off);
+        }
+        quiet.0 += 1;
+        Self
     }
 }
 
 impl Drop for Quiet {
     fn drop(&mut self) {
-        log::set_max_level(self.0);
+        let mut quiet = QUIET.lock().unwrap_or_else(|e| e.into_inner());
+        quiet.0 -= 1;
+        if quiet.0 == 0 {
+            log::set_max_level(quiet.1);
+        }
     }
 }
