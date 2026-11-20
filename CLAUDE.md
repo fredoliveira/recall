@@ -48,6 +48,11 @@ workspace:
     - `services/archive.rs` - local JSONL record; the minimal secondary service.
       `services/fanout.rs` - N services in order. `services.rs` - `from_config`, the one place both
       binaries build their service set.
+    - `live.rs` - **live views**, for consumers that show what is happening rather than deliver it
+      (an overlay). A `View` attached with `Follower::with_view` is handed every event, including
+      those a muted replay withholds from the services (flagged `replayed`), and the game in
+      progress as a `GameView` (deck, library size, the player's cards seen outside the library)
+      rebuilt from each GRE game-state message. See "Live views" below.
     - `config.rs` - typed `Config` (`[services.<name>]` sections); `load()` migrates the flat
       top-level token. `resolve_token` (CLI): config only, else print where the token goes and
       exit - no flag, no prompt, no legacy-ini import.
@@ -95,6 +100,26 @@ until the checkpoint, then go live. Rules:
 - A checkpoint matches a file by the bytes just before its offset, not by name (a rotated
   `Player-prev.log` resumes), and is scoped to host + token.
 - `parse_log` / `recall <LOG>` / the examples never read or write checkpoints.
+
+### Live views
+
+A service must get each event once; a view wants the state the log describes, replayed or not. So
+`Follower::emit` tells the view first and then applies the mute, and the game tracker
+(`live::Tracker`) publishes after each game-state message. Rules:
+
+- Nothing in `live.rs` reaches a service. The tracker is separate state beside `GameState`, never
+  read by a handler that builds a payload, and idle unless a view is attached: `tests/live.rs` pins
+  "a view changes nothing the services are sent".
+- The tracker is state-based: a card's place comes from the zones' own contents, not from following
+  it between zones, so mulligans and shuffles need no special case. Its invariant, checked on the
+  game fixture and worth re-checking on real logs
+  (`cargo run -p recall-core --example live -- <LOG>`): the library's size equals the deck minus the
+  player's cards seen elsewhere.
+- A card is identified as the game record identifies a drawn card (`overlayGrpId` of `Card` /
+  `SplitCard` objects), so a view's counts and an uploaded game agree.
+- An app may run several followers in one process (Brainstorm runs one that uploads and one that
+  feeds its overlays), so anything process-global a follower touches must be safe for that - the
+  replay's log silencing (`tail.rs`, `Quiet`) is counted for this reason.
 
 ### Adding a service
 

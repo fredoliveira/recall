@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- `recall-core`: live views (`recall_core::live`). A `View` attached with `Follower::with_view` is
+  told of every event, including those a restart's replay withholds from the services, and of the
+  game in progress: the deck, the library's size and the cards seen outside it, updated as the game
+  is played. For apps that show the log rather than upload it; what the services are sent is
+  unchanged. `cargo run -p recall-core --example live -- <LOG>` prints what a view is told.
+
+### Fixed
+
+- `recall-core`: two followers in one process no longer risk leaving logging switched off when their
+  replays overlap at launch.
+
 ### Changed
 
 - Homebrew names: the desktop app is now the `recall` cask
