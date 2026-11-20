@@ -17,6 +17,7 @@ pub mod checkpoint;
 pub mod config;
 pub mod events;
 pub mod follower;
+pub mod live;
 pub mod paths;
 pub mod retry;
 pub mod services;

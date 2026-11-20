@@ -57,6 +57,28 @@ impl<S: Service> Follower<S> {
             "GREMessageType_GameStateMessage" => self.handle_game_state_message(message_blob),
             _ => {}
         }
+
+        if is_game_state {
+            self.track_game_state(message_blob);
+        }
+    }
+
+    /// Feed a game-state message to the live view's tracker (see `crate::live`). Queued
+    /// messages count too: their changes are not sent again.
+    fn track_game_state(&mut self, message_blob: &Value) {
+        if self.view.is_none() {
+            return;
+        }
+        let seat = message_blob
+            .get("systemSeatIds")
+            .and_then(|s| s.as_array())
+            .and_then(|a| a.first())
+            .and_then(to_i64)
+            .or(self.match_state.seat_id);
+        if let Some(gsm) = message_blob.get("gameStateMessage") {
+            self.tracker.apply(seat, gsm);
+            self.publish_game();
+        }
     }
 
     pub(super) fn handle_game_state_message(&mut self, message_blob: &Value) {
@@ -252,6 +274,12 @@ impl<S: Service> Follower<S> {
             self.game.maindeck = Some(json!([]));
             self.game.sideboard = Some(json!([]));
             self.game.additional_deck_info = Some(deck_info.clone());
+        }
+        // A submitted deck is a game starting, for the live view.
+        if self.view.is_some() {
+            self.tracker
+                .start(self.game.maindeck.as_ref(), self.game.sideboard.as_ref());
+            self.publish_game();
         }
     }
 

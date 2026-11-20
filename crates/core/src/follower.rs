@@ -29,6 +29,7 @@ use crate::events::{
     Context, DeckEntry, DeckSubmission, DraftPack, DraftPick, DraftSource, GameData, GameEvent,
     GameHistory, GameResult, MatchResult, Service,
 };
+use crate::live::{Live, Tracker, View};
 use crate::services::seventeenlands::ApiClient;
 use crate::services::seventeenlands::SeventeenLands;
 use crate::time_parse::{epoch_zero, extract_time, isoformat, maybe_get_utc_timestamp};
@@ -301,6 +302,13 @@ pub struct Follower<S: Service> {
     checkpoint_blocked: bool,
     /// The last `DETAILED LOGS:` line said they are disabled.
     detailed_logs_disabled: bool,
+
+    // Live views (see `crate::live`). Not parse state the services depend on, and all of it
+    // idle unless a view is attached.
+    /// Told of every event, muted or not, and of the game in progress.
+    view: Option<Box<dyn View>>,
+    /// The game in progress, for the view.
+    tracker: Tracker,
 }
 
 impl Follower<SeventeenLands<ApiClient>> {
@@ -334,9 +342,19 @@ impl<S: Service> Follower<S> {
             delivered_since_checkpoint: false,
             checkpoint_blocked: false,
             detailed_logs_disabled: false,
+            view: None,
+            tracker: Tracker::default(),
         };
         f.reinitialize();
         f
+    }
+
+    /// Attach a live [`View`]: it is handed every event, including those the muted replay
+    /// after a restart withholds from the services, and the game in progress as it changes.
+    /// Attach it before parsing. The services are sent exactly what they are without one.
+    pub fn with_view(mut self, view: impl View + 'static) -> Self {
+        self.view = Some(Box::new(view));
+        self
     }
 
     /// Port of `_reinitialize`: reset all state, ending with `__clear_match_data`.
@@ -355,12 +373,20 @@ impl<S: Service> Follower<S> {
         self.pending_game = None;
         self.last_blob = String::new();
         self.clear_match_data(false);
+        self.tracker.end();
+        self.publish_game();
     }
 
     /// Hand an event to the services - the one place the follower emits. While `muted`
     /// (replaying log that was delivered before a restart) the event is dropped: the
     /// handler has already advanced the state, which is all the replay is for.
     fn emit(&mut self, event: &GameEvent) {
+        if let Some(view) = &mut self.view {
+            view.handle(Live::Event {
+                event,
+                replayed: self.muted,
+            });
+        }
         if self.muted {
             return;
         }
@@ -368,6 +394,15 @@ impl<S: Service> Follower<S> {
             self.delivered_since_checkpoint = true;
         } else {
             self.checkpoint_blocked = true;
+        }
+    }
+
+    /// Tell the view how the game in progress stands, if that changed since it was last told.
+    fn publish_game(&mut self) {
+        if let Some(view) = &mut self.view
+            && let Some(game) = self.tracker.changed()
+        {
+            view.handle(Live::Game(game));
         }
     }
 
