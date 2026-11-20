@@ -3,10 +3,10 @@
 The tap ([fredoliveira/homebrew-tap](https://github.com/fredoliveira/homebrew-tap)) ships two
 things, both built and attached to each GitHub release:
 
-- **`Casks/recall.rb`** - a **cask** for the menu-bar desktop app (a universal `.dmg`,
-  Intel + Apple Silicon). macOS only.
-- **`Formula/recall-cli.rb`** - a binary "pour" **formula** for the `recall` CLI. Covers macOS (arm64 +
-  x86_64) and Linux (x86_64); Windows isn't a Homebrew target.
+- **`Casks/recall.rb`** - a **cask** for the menu-bar desktop app (a universal `.dmg`, Intel + Apple
+  Silicon). macOS only.
+- **`Formula/recall-cli.rb`** - a binary "pour" **formula** for the `recall` CLI. Covers macOS
+  (arm64 + x86_64) and Linux (x86_64); Windows isn't a Homebrew target.
 
 Both tap files are **generated** by [`generate.sh`](generate.sh) here - edit the generator, never
 the tap files directly.
